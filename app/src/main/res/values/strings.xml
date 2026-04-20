@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Healthcare</string>
+    <string name="notification_channel_name">ウォーキング追跡</string>
+    <string name="notification_channel_description">ウォーキング中の位置情報を追跡します</string>
+</resources>
