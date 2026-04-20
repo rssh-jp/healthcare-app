@@ -2,6 +2,8 @@ package com.healthcare.app.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.healthcare.app.data.dao.WalkingPointDao
 import com.healthcare.app.data.dao.WalkingSessionDao
 import com.healthcare.app.data.db.AppDatabase
@@ -23,7 +25,11 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "healthcare_db"
-        ).build()
+        ).addCallback(object : RoomDatabase.Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                db.execSQL("PRAGMA foreign_keys = ON")
+            }
+        }).build()
     }
 
     @Provides

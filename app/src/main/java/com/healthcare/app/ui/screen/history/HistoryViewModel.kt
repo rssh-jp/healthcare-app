@@ -17,7 +17,10 @@ import javax.inject.Inject
 data class HistoryUiState(
     val sessions: List<WalkingSession> = emptyList(),
     val selectedSession: WalkingSession? = null,
-    val selectedSessionPoints: List<WalkingPoint> = emptyList()
+    val selectedSessionPoints: List<WalkingPoint> = emptyList(),
+    val isSelectionMode: Boolean = false,
+    val selectedSessionIds: Set<Long> = emptySet(),
+    val showDeleteConfirmDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -31,7 +34,19 @@ class HistoryViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             repository.observeCompletedSessions().collect { sessions ->
-                _uiState.value = _uiState.value.copy(sessions = sessions)
+                val current = _uiState.value
+                val availableIds = sessions.map { it.id }.toSet()
+                val filteredSelectedIds = current.selectedSessionIds.filter { it in availableIds }.toSet()
+                val selectedSession = current.selectedSession?.takeIf { it.id in availableIds }
+
+                _uiState.value = current.copy(
+                    sessions = sessions,
+                    selectedSession = selectedSession,
+                    selectedSessionPoints = if (selectedSession == null) emptyList() else current.selectedSessionPoints,
+                    selectedSessionIds = filteredSelectedIds,
+                    isSelectionMode = current.isSelectionMode && sessions.isNotEmpty(),
+                    showDeleteConfirmDialog = current.showDeleteConfirmDialog && filteredSelectedIds.isNotEmpty()
+                )
             }
         }
     }
@@ -51,5 +66,51 @@ class HistoryViewModel @Inject constructor(
             selectedSession = null,
             selectedSessionPoints = emptyList()
         )
+    }
+
+    fun enterSelectionMode() {
+        if (_uiState.value.sessions.isEmpty()) return
+        _uiState.value = _uiState.value.copy(isSelectionMode = true)
+    }
+
+    fun cancelSelectionMode() {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = false,
+            selectedSessionIds = emptySet(),
+            showDeleteConfirmDialog = false
+        )
+    }
+
+    fun toggleSessionSelection(sessionId: Long) {
+        if (!_uiState.value.isSelectionMode) return
+
+        val updated = _uiState.value.selectedSessionIds.toMutableSet().apply {
+            if (contains(sessionId)) remove(sessionId) else add(sessionId)
+        }
+
+        _uiState.value = _uiState.value.copy(selectedSessionIds = updated)
+    }
+
+    fun requestDeleteSelected() {
+        if (_uiState.value.selectedSessionIds.isEmpty()) return
+        _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = true)
+    }
+
+    fun dismissDeleteDialog() {
+        _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = false)
+    }
+
+    fun confirmDeleteSelected() {
+        val idsToDelete = _uiState.value.selectedSessionIds
+        if (idsToDelete.isEmpty()) return
+
+        viewModelScope.launch {
+            repository.deleteSessionsByIds(idsToDelete)
+            _uiState.value = _uiState.value.copy(
+                isSelectionMode = false,
+                selectedSessionIds = emptySet(),
+                showDeleteConfirmDialog = false
+            )
+        }
     }
 }

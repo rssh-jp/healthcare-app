@@ -77,4 +77,8 @@ class WalkingRepository @Inject constructor(
 
     suspend fun getLastPoint(sessionId: Long): WalkingPoint? =
         pointDao.getLastPoint(sessionId)
+
+    suspend fun deleteSessionsByIds(ids: Collection<Long>) {
+        sessionDao.deleteByIds(ids)
+    }
 }

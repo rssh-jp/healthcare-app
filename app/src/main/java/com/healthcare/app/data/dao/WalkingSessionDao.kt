@@ -27,6 +27,9 @@ interface WalkingSessionDao {
     @Query("SELECT * FROM walking_sessions WHERE isActive = 0 ORDER BY startTime DESC")
     fun observeCompletedSessions(): Flow<List<WalkingSession>>
 
+    @Query("DELETE FROM walking_sessions WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: Collection<Long>)
+
     @Query("SELECT * FROM walking_sessions WHERE startTime >= :startTime AND startTime < :endTime AND isActive = 0 ORDER BY startTime DESC")
     fun getSessionsByDateRange(startTime: Long, endTime: Long): Flow<List<WalkingSession>>
 

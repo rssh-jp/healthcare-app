@@ -6,6 +6,7 @@ APK_DEBUG := app/build/outputs/apk/debug/app-debug.apk
 
 LOCAL_PROPERTIES := local.properties
 SDK_DIR_FROM_LOCAL := $(shell [ -f $(LOCAL_PROPERTIES) ] && sed -n 's/^sdk\.dir=//p' $(LOCAL_PROPERTIES) | tail -n 1)
+ADB := $(or $(SDK_DIR_FROM_LOCAL),$(ANDROID_HOME))/platform-tools/adb
 
 ifneq ($(strip $(SDK_DIR_FROM_LOCAL)),)
 export ANDROID_HOME ?= $(SDK_DIR_FROM_LOCAL)
@@ -41,8 +42,8 @@ clean:
 rebuild: clean build
 
 install: build
-	@command -v adb >/dev/null || (echo "adb not found. Install Android platform-tools."; exit 1)
-	adb install -r $(APK_DEBUG)
+	@test -f $(ADB) || (echo "adb not found: $(ADB)"; exit 1)
+	$(ADB) install -r $(APK_DEBUG)
 
 test:
 	$(GRADLE) test
