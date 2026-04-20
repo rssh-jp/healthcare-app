@@ -1,4 +1,4 @@
-package com.healthcare.app.ui.screen.home
+package com.healthcare.app.ui.screen.settings
 
 import androidx.activity.result.ActivityResult
 import androidx.lifecycle.ViewModel
@@ -7,71 +7,35 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseUser
-import com.healthcare.app.data.entity.WalkingSession
 import com.healthcare.app.data.repository.AuthRepository
 import com.healthcare.app.data.repository.FirestoreSyncRepository
 import com.healthcare.app.data.repository.WalkingRepository
-import com.healthcare.app.service.LocationTrackingService
-import com.healthcare.app.util.DateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 import javax.inject.Inject
 
-data class HomeUiState(
-    val todayDistance: Double = 0.0,
-    val todayCalories: Double = 0.0,
-    val todaySessionCount: Int = 0,
-    val recentSessions: List<WalkingSession> = emptyList(),
-    val isTracking: Boolean = false,
-    val currentDistance: Double = 0.0,
-    val currentCalories: Double = 0.0,
+data class SettingsUiState(
     val currentUser: FirebaseUser? = null,
     val isSigningIn: Boolean = false,
     val authError: String? = null
 )
 
 @HiltViewModel
-class HomeViewModel @Inject constructor(
-    private val repository: WalkingRepository,
+class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val walkingRepository: WalkingRepository,
     private val firestoreSyncRepository: FirestoreSyncRepository,
     val googleSignInClient: GoogleSignInClient
 ) : ViewModel() {
 
-    private val todayStart = DateUtils.getStartOfDay(LocalDate.now())
-    private val todayEnd = DateUtils.getEndOfDay(LocalDate.now())
-
-    private val _uiState = MutableStateFlow(HomeUiState(currentUser = authRepository.currentUser))
-    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(SettingsUiState(currentUser = authRepository.currentUser))
+    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
-        combine(
-            repository.getTotalDistanceByDateRange(todayStart, todayEnd),
-            repository.getTotalCaloriesByDateRange(todayStart, todayEnd),
-            repository.getSessionCountByDateRange(todayStart, todayEnd),
-            repository.getSessionsByDateRange(todayStart, todayEnd),
-            LocationTrackingService.isTracking
-        ) { distance, calories, count, sessions, tracking ->
-            _uiState.update { cur ->
-                cur.copy(
-                    todayDistance = distance,
-                    todayCalories = calories,
-                    todaySessionCount = count,
-                    recentSessions = sessions.take(5),
-                    isTracking = tracking,
-                    currentDistance = LocationTrackingService.totalDistanceFlow.value,
-                    currentCalories = LocationTrackingService.totalCaloriesFlow.value
-                )
-            }
-        }.launchIn(viewModelScope)
-
         viewModelScope.launch {
             authRepository.authState.collect { user ->
                 _uiState.update { it.copy(currentUser = user) }
@@ -92,8 +56,7 @@ class HomeViewModel @Inject constructor(
                 }
                 authRepository.signInWithGoogleIdToken(idToken)
                     .onSuccess { user ->
-                        // 初回ログイン: ローカルをアップロード / 再ログイン: Firestoreで完全上書き
-                        firestoreSyncRepository.syncOnLogin(user.uid, repository)
+                        firestoreSyncRepository.syncOnLogin(user.uid, walkingRepository)
                     }
                     .onFailure { e ->
                         _uiState.update { it.copy(authError = e.message) }

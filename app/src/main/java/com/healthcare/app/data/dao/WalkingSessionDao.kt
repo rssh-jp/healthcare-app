@@ -30,6 +30,9 @@ interface WalkingSessionDao {
     @Query("DELETE FROM walking_sessions WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: Collection<Long>)
 
+    @Query("SELECT * FROM walking_sessions WHERE id IN (:ids)")
+    suspend fun getByIds(ids: Collection<Long>): List<WalkingSession>
+
     @Query("SELECT * FROM walking_sessions WHERE startTime >= :startTime AND startTime < :endTime AND isActive = 0 ORDER BY startTime DESC")
     fun getSessionsByDateRange(startTime: Long, endTime: Long): Flow<List<WalkingSession>>
 
@@ -56,6 +59,25 @@ interface WalkingSessionDao {
         ORDER BY dayTimestamp DESC
     """)
     fun getDailyAggregation(startTime: Long, endTime: Long): Flow<List<DailyAggregation>>
+
+    // Sync-related queries
+    @Query("SELECT * FROM walking_sessions WHERE syncStatus IN ('PENDING', 'FAILED') AND isActive = 0")
+    suspend fun getPendingOrFailedSessions(): List<WalkingSession>
+
+    @Query("UPDATE walking_sessions SET syncStatus = :status, firestoreDocId = :docId WHERE id = :id")
+    suspend fun updateSyncStatus(id: Long, status: String, docId: String?)
+
+    @Query("SELECT * FROM walking_sessions WHERE sessionUuid = :uuid LIMIT 1")
+    suspend fun getByUuid(uuid: String): WalkingSession?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfNotExists(session: WalkingSession): Long
+
+    @Query("DELETE FROM walking_sessions WHERE isActive = 0")
+    suspend fun deleteAllCompleted()
+
+    @Query("SELECT * FROM walking_sessions WHERE isActive = 0")
+    suspend fun getAllCompleted(): List<WalkingSession>
 }
 
 data class DailyAggregation(

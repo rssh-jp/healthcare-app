@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,14 +65,29 @@ fun TrackingScreen(viewModel: TrackingViewModel = hiltViewModel()) {
     }
 
     val cameraPositionState = rememberCameraPositionState()
+    var cameraInitialized by remember { mutableStateOf(false) }
 
-    // Move camera to latest point
     val points = state.points
-    if (points.isNotEmpty()) {
-        val lastPoint = points.last()
-        val target = LatLng(lastPoint.latitude, lastPoint.longitude)
-        val update = CameraUpdateFactory.newLatLngZoom(target, 16f)
-        cameraPositionState.move(update)
+
+    // 追跡停止時に初期化フラグをリセット
+    LaunchedEffect(state.isTracking) {
+        if (!state.isTracking) {
+            cameraInitialized = false
+        }
+    }
+
+    // 最新地点へカメラを追従（ユーザーのズームレベルを維持）
+    LaunchedEffect(points.lastOrNull()) {
+        if (points.isNotEmpty()) {
+            val lastPoint = points.last()
+            val target = LatLng(lastPoint.latitude, lastPoint.longitude)
+            if (!cameraInitialized) {
+                cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(target, 16f))
+                cameraInitialized = true
+            } else {
+                cameraPositionState.animate(CameraUpdateFactory.newLatLng(target))
+            }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {

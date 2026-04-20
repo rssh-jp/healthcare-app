@@ -19,3 +19,31 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renameSourcefileattribute SourceFile
+
+# Firebase Authentication
+-keepattributes Signature
+-keepattributes *Annotation*
+-keepattributes EnclosingMethod
+-keepattributes InnerClasses
+
+# Firebase Firestore
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }
+-dontwarn com.google.firebase.**
+-dontwarn com.google.android.gms.**
+
+# Google Sign-In
+-keep class com.google.android.gms.auth.** { *; }
+
+# Firestore data classes (prevent field obfuscation)
+-keepclassmembers class com.healthcare.app.data.entity.** {
+    <fields>;
+}
+
+# WorkManager
+-keep class androidx.work.** { *; }
+-keep class * extends androidx.work.Worker
+-keep class * extends androidx.work.CoroutineWorker
+-keepclassmembers class * extends androidx.work.Worker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}

@@ -3,9 +3,11 @@ package com.healthcare.app.data.repository
 import com.healthcare.app.data.dao.DailyAggregation
 import com.healthcare.app.data.dao.WalkingPointDao
 import com.healthcare.app.data.dao.WalkingSessionDao
+import com.healthcare.app.data.entity.SyncStatus
 import com.healthcare.app.data.entity.WalkingPoint
 import com.healthcare.app.data.entity.WalkingSession
 import kotlinx.coroutines.flow.Flow
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,6 +19,7 @@ class WalkingRepository @Inject constructor(
     // Session operations
     suspend fun startNewSession(): Long {
         val session = WalkingSession(
+            sessionUuid = UUID.randomUUID().toString(),
             startTime = System.currentTimeMillis(),
             isActive = true
         )
@@ -45,6 +48,8 @@ class WalkingRepository @Inject constructor(
         )
     }
 
+    suspend fun getById(id: Long): WalkingSession? = sessionDao.getById(id)
+
     suspend fun getActiveSession(): WalkingSession? = sessionDao.getActiveSession()
 
     fun observeActiveSession(): Flow<WalkingSession?> = sessionDao.observeActiveSession()
@@ -66,6 +71,21 @@ class WalkingRepository @Inject constructor(
     fun getDailyAggregation(startTime: Long, endTime: Long): Flow<List<DailyAggregation>> =
         sessionDao.getDailyAggregation(startTime, endTime)
 
+    // Sync operations
+    suspend fun updateSyncStatus(id: Long, status: SyncStatus, firestoreDocId: String?) {
+        sessionDao.updateSyncStatus(id, status.name, firestoreDocId)
+    }
+
+    suspend fun getPendingSessions(): List<WalkingSession> =
+        sessionDao.getPendingOrFailedSessions()
+
+    suspend fun upsertSessionFromRemote(session: WalkingSession) {
+        val existing = sessionDao.getByUuid(session.sessionUuid)
+        if (existing == null) {
+            sessionDao.insertIfNotExists(session)
+        }
+    }
+
     // Point operations
     suspend fun addPoint(point: WalkingPoint) = pointDao.insert(point)
 
@@ -79,6 +99,19 @@ class WalkingRepository @Inject constructor(
         pointDao.getLastPoint(sessionId)
 
     suspend fun deleteSessionsByIds(ids: Collection<Long>) {
+        // ポイントも削除
+        ids.forEach { pointDao.deleteBySession(it) }
         sessionDao.deleteByIds(ids)
+    }
+
+    suspend fun getSessionsByIds(ids: Collection<Long>): List<WalkingSession> =
+        sessionDao.getByIds(ids)
+
+    suspend fun getAllCompletedSessions(): List<WalkingSession> =
+        sessionDao.getAllCompleted()
+
+    suspend fun deleteAllLocalData() {
+        pointDao.deleteAll()
+        sessionDao.deleteAllCompleted()
     }
 }

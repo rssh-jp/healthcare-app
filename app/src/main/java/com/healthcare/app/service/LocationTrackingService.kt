@@ -19,8 +19,13 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.healthcare.app.MainActivity
 import com.healthcare.app.R
+import com.healthcare.app.data.entity.SyncStatus
 import com.healthcare.app.data.entity.WalkingPoint
+import com.healthcare.app.data.repository.AuthRepository
+import com.healthcare.app.data.repository.FirestoreSyncRepository
 import com.healthcare.app.data.repository.WalkingRepository
+import com.healthcare.app.sync.NetworkMonitor
+import com.healthcare.app.sync.SyncWorker
 import com.healthcare.app.util.CalorieCalculator
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +43,9 @@ class LocationTrackingService : Service() {
 
     @Inject lateinit var repository: WalkingRepository
     @Inject lateinit var calorieCalculator: CalorieCalculator
+    @Inject lateinit var authRepository: AuthRepository
+    @Inject lateinit var firestoreSyncRepository: FirestoreSyncRepository
+    @Inject lateinit var networkMonitor: NetworkMonitor
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -240,6 +248,7 @@ class LocationTrackingService : Service() {
         serviceScope.launch {
             if (currentSessionId >= 0) {
                 repository.endSession(currentSessionId, totalDistance, totalCalories)
+                trySyncSession(currentSessionId)
             }
 
             _isTracking.value = false
@@ -258,6 +267,34 @@ class LocationTrackingService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    private suspend fun trySyncSession(sessionId: Long) {
+        val user = authRepository.currentUser ?: return
+        if (!networkMonitor.isConnectedNow()) return
+
+        val session = repository.getById(sessionId) ?: return
+        val points = repository.getPointsBySessionOnce(sessionId)
+        val result = firestoreSyncRepository.uploadSession(session, points)
+
+        repository.updateSyncStatus(
+            id = sessionId,
+            status = if (result.isSuccess) SyncStatus.SYNCED else SyncStatus.FAILED,
+            firestoreDocId = session.sessionUuid.takeIf { result.isSuccess }
+        )
+
+        if (result.isFailure) {
+            scheduleSyncWorker()
+        }
+    }
+
+    private fun scheduleSyncWorker() {
+        androidx.work.WorkManager.getInstance(applicationContext)
+            .enqueueUniqueWork(
+                SyncWorker.UNIQUE_WORK_NAME,
+                androidx.work.ExistingWorkPolicy.KEEP,
+                SyncWorker.buildOneTimeRequest()
+            )
     }
 
     override fun onDestroy() {

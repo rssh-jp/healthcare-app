@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.healthcare.app.data.dao.WalkingPointDao
 import com.healthcare.app.data.dao.WalkingSessionDao
 import com.healthcare.app.data.db.AppDatabase
+import com.healthcare.app.data.db.MIGRATION_1_2
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -25,11 +26,13 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "healthcare_db"
-        ).addCallback(object : RoomDatabase.Callback() {
-            override fun onOpen(db: SupportSQLiteDatabase) {
-                db.execSQL("PRAGMA foreign_keys = ON")
-            }
-        }).build()
+        )
+            .addMigrations(MIGRATION_1_2)
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onOpen(db: SupportSQLiteDatabase) {
+                    db.execSQL("PRAGMA foreign_keys = ON")
+                }
+            }).build()
     }
 
     @Provides

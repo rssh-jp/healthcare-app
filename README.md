@@ -54,23 +54,77 @@ APIキーは [Google Cloud Console](https://console.cloud.google.com/apis/creden
 「Maps SDK for Android」を有効にしてください。
 
 ### 3. ビルド & 実行
-- Android Studio: **Run > Run 'app'**
-- コマンドライン: `./gradlew assembleDebug`
-- Makefile: `make build`
 
-#### Makefileコマンド
-```bash
-make help           # コマンド一覧
-make build          # Debug APKビルド
-make install        # 端末へ上書きインストール(adb必要)
-make signing-report # SHA-1/SHA-256確認
+#### コマンドライン（Windows）
+`gradlew.bat` を使用します。`JAVA_HOME` が未設定でも Android Studio の JBR に自動フォールバックします。
+
+```bat
+:: Debug APK をビルド
+.\gradlew.bat assembleDebug
+
+:: Release APK をビルド
+.\gradlew.bat assembleRelease
+
+:: ビルド成果物を削除
+.\gradlew.bat clean
+
+:: クリーンビルド
+.\gradlew.bat clean assembleDebug
+
+:: ユニットテスト実行
+.\gradlew.bat test
+
+:: Android Lint 実行
+.\gradlew.bat lint
+
+:: 署名証明書の SHA-1 / SHA-256 確認
+.\gradlew.bat signingReport
+
+:: 接続済み端末へ Debug APK をインストール
+.\gradlew.bat installDebug
 ```
+
+> ビルド済み APK の出力先: `app/build/outputs/apk/debug/app-debug.apk`
+
+#### Android Studio
+**Run > Run 'app'** で実行できます。
 
 ### 地図が表示されないとき（トラブルシュート）
 - `local.properties` の `MAPS_API_KEY` が空、または `YOUR_API_KEY_HERE` などのプレースホルダーになっていないか確認
 - Google Cloud で **Billing 有効化** と **Maps SDK for Android 有効化** を確認
 - APIキー制限を使う場合は、Android アプリ制限に **パッケージ名 `jp.co.rssh_jp.healthcareap`** と **署名証明書 SHA-1** を正しく登録
 - 変更後は Gradle Sync / 再ビルドを実行
+
+### 3. Firebase セットアップ（クラウド同期・Google サインインを使う場合）
+
+> ⚠️ Firebase なしでもアプリはビルド・動作します。認証機能を有効にする場合のみ必要です。
+
+#### 3-1. Firebase プロジェクト作成
+1. [Firebase コンソール](https://console.firebase.google.com/) にアクセス
+2. 「プロジェクトを作成」でプロジェクトを作成
+3. 「アプリを追加」> Android を選択
+4. パッケージ名: `jp.co.rssh_jp.healthcareap`
+5. アプリのニックネームを入力（任意）
+6. 署名証明書 SHA-1 を入力（`.\gradlew.bat signingReport` で確認）
+
+#### 3-2. google-services.json の配置
+1. Firebase コンソールから `google-services.json` をダウンロード
+2. `app/google-services.json.example` を参考に内容を確認
+3. ダウンロードしたファイルを `app/google-services.json` として配置
+   - このファイルは `.gitignore` に追加することを推奨（認証情報を含む）
+
+#### 3-3. Firebase Authentication の有効化
+1. Firebase コンソール > Authentication > Sign-in method
+2. 「Google」を有効化
+
+#### 3-4. Firestore Database の作成
+1. Firebase コンソール > Firestore Database > データベースを作成
+2. 本番モードまたはテストモードで作成
+3. `firestore.rules` の内容をセキュリティルールに適用:
+   ```
+   firebase deploy --only firestore:rules
+   ```
+   （Firebase CLI が必要: `npm install -g firebase-tools`）
 
 ### 4. 実機へのインストール
 1. スマホの「開発者オプション」で「USBデバッグ」を有効にする

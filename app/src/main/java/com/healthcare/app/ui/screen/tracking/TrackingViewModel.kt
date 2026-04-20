@@ -8,9 +8,12 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.WorkManager
 import com.healthcare.app.data.entity.WalkingPoint
 import com.healthcare.app.data.repository.WalkingRepository
 import com.healthcare.app.service.LocationTrackingService
+import com.healthcare.app.sync.SyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
@@ -80,6 +83,12 @@ class TrackingViewModel @Inject constructor(
             action = LocationTrackingService.ACTION_STOP
         }
         application.startService(intent)
+        // ウォーキング停止直後に即時アップロード
+        WorkManager.getInstance(application).enqueueUniqueWork(
+            SyncWorker.UNIQUE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            SyncWorker.buildOneTimeRequest()
+        )
     }
 
     fun hasLocationPermission(): Boolean {

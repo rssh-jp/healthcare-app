@@ -8,3 +8,12 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Kotlin build cache
+.kotlin/
+
+# Build output logs
+build_output.txt
+
+# Firebase / Google Services credentials (use google-services.json.example as template)
+app/google-services.json

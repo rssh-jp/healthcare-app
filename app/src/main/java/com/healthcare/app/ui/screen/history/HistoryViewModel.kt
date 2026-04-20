@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.healthcare.app.data.entity.WalkingPoint
 import com.healthcare.app.data.entity.WalkingSession
+import com.healthcare.app.data.repository.FirestoreSyncRepository
 import com.healthcare.app.data.repository.WalkingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,8 @@ data class HistoryUiState(
 
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
-    private val repository: WalkingRepository
+    private val repository: WalkingRepository,
+    private val firestoreSyncRepository: FirestoreSyncRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HistoryUiState())
@@ -105,6 +107,12 @@ class HistoryViewModel @Inject constructor(
         if (idsToDelete.isEmpty()) return
 
         viewModelScope.launch {
+            // 削除前に sessionUuid を取得して Firestore からも削除
+            val sessions = repository.getSessionsByIds(idsToDelete)
+            val uuids = sessions.map { it.sessionUuid }.filter { it.isNotEmpty() }
+            if (uuids.isNotEmpty()) {
+                firestoreSyncRepository.deleteSessions(uuids)
+            }
             repository.deleteSessionsByIds(idsToDelete)
             _uiState.value = _uiState.value.copy(
                 isSelectionMode = false,

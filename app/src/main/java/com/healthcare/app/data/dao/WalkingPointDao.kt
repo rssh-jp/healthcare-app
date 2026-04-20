@@ -23,4 +23,7 @@ interface WalkingPointDao {
 
     @Query("DELETE FROM walking_points WHERE sessionId = :sessionId")
     suspend fun deleteBySession(sessionId: Long)
+
+    @Query("DELETE FROM walking_points")
+    suspend fun deleteAll()
 }

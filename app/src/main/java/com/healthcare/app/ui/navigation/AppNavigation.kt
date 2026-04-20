@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -23,6 +24,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.healthcare.app.ui.screen.history.HistoryScreen
 import com.healthcare.app.ui.screen.home.HomeScreen
+import com.healthcare.app.ui.screen.settings.SettingsScreen
 import com.healthcare.app.ui.screen.stats.StatsScreen
 import com.healthcare.app.ui.screen.tracking.TrackingScreen
 
@@ -35,6 +37,7 @@ sealed class BottomNavItem(
     data object Tracking : BottomNavItem("tracking", "ウォーキング", Icons.AutoMirrored.Filled.DirectionsWalk)
     data object History : BottomNavItem("history", "履歴", Icons.Default.Map)
     data object Stats : BottomNavItem("stats", "統計", Icons.Default.QueryStats)
+    data object Settings : BottomNavItem("settings", "設定", Icons.Default.Settings)
 }
 
 @Composable
@@ -44,7 +47,8 @@ fun AppNavigation() {
         BottomNavItem.Home,
         BottomNavItem.Tracking,
         BottomNavItem.History,
-        BottomNavItem.Stats
+        BottomNavItem.Stats,
+        BottomNavItem.Settings
     )
 
     Scaffold(
@@ -80,6 +84,7 @@ fun AppNavigation() {
             composable("tracking") { TrackingScreen() }
             composable("history") { HistoryScreen() }
             composable("stats") { StatsScreen() }
+            composable("settings") { SettingsScreen() }
         }
     }
 }

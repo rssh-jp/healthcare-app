@@ -1,6 +1,9 @@
 package com.healthcare.app.ui.screen.home
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,9 +21,13 @@ import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -36,91 +43,168 @@ import com.healthcare.app.util.DateUtils
 fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Text(
-                text = "今日のサマリー",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
+    val signInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        viewModel.onSignInResult(result)
+    }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.Route,
-                    label = "距離",
-                    value = DateUtils.formatDistance(state.todayDistance)
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.LocalFireDepartment,
-                    label = "カロリー",
-                    value = "%.0f kcal".format(state.todayCalories)
-                )
-            }
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.AutoMirrored.Filled.DirectionsWalk,
-                    label = "ウォーキング回数",
-                    value = "${state.todaySessionCount} 回"
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.Timer,
-                    label = "ステータス",
-                    value = if (state.isTracking) "追跡中" else "停止中"
-                )
-            }
-        }
-
-        if (state.isTracking) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // 未サインイン時のみ同期促進カードを表示
+            if (state.currentUser == null) {
+                item {
+                    SignInPromptSection(
+                        isSigningIn = state.isSigningIn,
+                        onSignInClick = {
+                            signInLauncher.launch(viewModel.googleSignInClient.signInIntent)
+                        }
                     )
+                }
+            }
+
+            item {
+                Text(
+                    text = "今日のサマリー",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "現在のウォーキング",
-                            style = MaterialTheme.typography.titleMedium
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.Route,
+                        label = "距離",
+                        value = DateUtils.formatDistance(state.todayDistance)
+                    )
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.LocalFireDepartment,
+                        label = "カロリー",
+                        value = "%.0f kcal".format(state.todayCalories)
+                    )
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.AutoMirrored.Filled.DirectionsWalk,
+                        label = "ウォーキング回数",
+                        value = "${state.todaySessionCount} 回"
+                    )
+                    StatCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Default.Timer,
+                        label = "ステータス",
+                        value = if (state.isTracking) "追跡中" else "停止中"
+                    )
+                }
+            }
+
+            if (state.isTracking) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("距離: ${DateUtils.formatDistance(state.currentDistance)}")
-                        Text("カロリー: %.1f kcal".format(state.currentCalories))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "現在のウォーキング",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("距離: ${DateUtils.formatDistance(state.currentDistance)}")
+                            Text("カロリー: %.1f kcal".format(state.currentCalories))
+                        }
                     }
+                }
+            }
+
+            if (state.recentSessions.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "最近のウォーキング",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(state.recentSessions) { session ->
+                    SessionCard(session = session)
                 }
             }
         }
 
-        if (state.recentSessions.isNotEmpty()) {
-            item {
-                Text(
-                    text = "最近のウォーキング",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+        // エラー Snackbar
+        if (state.authError != null) {
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                action = {
+                    TextButton(onClick = { viewModel.dismissAuthError() }) {
+                        Text("閉じる")
+                    }
+                }
+            ) {
+                Text(state.authError ?: "")
             }
-            items(state.recentSessions) { session ->
-                SessionCard(session = session)
+        }
+    }
+}
+
+@Composable
+private fun SignInPromptSection(
+    isSigningIn: Boolean,
+    onSignInClick: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        when {
+            isSigningIn -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.size(12.dp))
+                    Text("サインイン中...")
+                }
+            }
+            else -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "クラウド同期を有効にする",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedButton(onClick = onSignInClick) {
+                        Text("Google でサインイン")
+                    }
+                }
             }
         }
     }
@@ -198,3 +282,5 @@ private fun SessionCard(session: WalkingSession) {
         }
     }
 }
+
+
