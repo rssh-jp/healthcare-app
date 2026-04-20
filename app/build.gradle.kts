@@ -13,7 +13,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.healthcare.app"
+        applicationId = "jp.co.rssh_jp.healthcareap"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
@@ -26,7 +26,10 @@ android {
         if (localPropsFile.exists()) {
             localPropsFile.inputStream().use { localProps.load(it) }
         }
-        manifestPlaceholders["MAPS_API_KEY"] = localProps.getProperty("MAPS_API_KEY", "")
+        val mapsApiKey = localProps.getProperty("MAPS_API_KEY", "")
+        val escapedMapsApiKey = mapsApiKey.replace("\\", "\\\\").replace("\"", "\\\"")
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("String", "MAPS_API_KEY", "\"$escapedMapsApiKey\"")
     }
 
     buildTypes {

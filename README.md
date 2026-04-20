@@ -56,6 +56,21 @@ APIキーは [Google Cloud Console](https://console.cloud.google.com/apis/creden
 ### 3. ビルド & 実行
 - Android Studio: **Run > Run 'app'**
 - コマンドライン: `./gradlew assembleDebug`
+- Makefile: `make build`
+
+#### Makefileコマンド
+```bash
+make help           # コマンド一覧
+make build          # Debug APKビルド
+make install        # 端末へ上書きインストール(adb必要)
+make signing-report # SHA-1/SHA-256確認
+```
+
+### 地図が表示されないとき（トラブルシュート）
+- `local.properties` の `MAPS_API_KEY` が空、または `YOUR_API_KEY_HERE` などのプレースホルダーになっていないか確認
+- Google Cloud で **Billing 有効化** と **Maps SDK for Android 有効化** を確認
+- APIキー制限を使う場合は、Android アプリ制限に **パッケージ名 `jp.co.rssh_jp.healthcareap`** と **署名証明書 SHA-1** を正しく登録
+- 変更後は Gradle Sync / 再ビルドを実行
 
 ### 4. 実機へのインストール
 1. スマホの「開発者オプション」で「USBデバッグ」を有効にする

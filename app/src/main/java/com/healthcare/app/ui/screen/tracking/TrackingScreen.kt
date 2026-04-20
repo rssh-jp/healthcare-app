@@ -46,11 +46,13 @@ import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.healthcare.app.util.DateUtils
+import com.healthcare.app.util.MapsApiKeyValidator
 
 @Composable
 fun TrackingScreen(viewModel: TrackingViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var hasPermission by remember { mutableStateOf(viewModel.hasLocationPermission()) }
+    val isMapsApiKeyConfigured = MapsApiKeyValidator.isConfigured()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -79,23 +81,49 @@ fun TrackingScreen(viewModel: TrackingViewModel = hiltViewModel()) {
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            GoogleMap(
-                modifier = Modifier.fillMaxSize(),
-                cameraPositionState = cameraPositionState,
-                properties = MapProperties(isMyLocationEnabled = hasPermission),
-                uiSettings = MapUiSettings(zoomControlsEnabled = true)
-            ) {
-                if (points.size >= 2) {
-                    val path = points.map { LatLng(it.latitude, it.longitude) }
-                    Polyline(
-                        points = path,
-                        color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
-                        width = 8f
+            if (isMapsApiKeyConfigured) {
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = cameraPositionState,
+                    properties = MapProperties(isMyLocationEnabled = hasPermission),
+                    uiSettings = MapUiSettings(zoomControlsEnabled = true)
+                ) {
+                    if (points.size >= 2) {
+                        val path = points.map { LatLng(it.latitude, it.longitude) }
+                        Polyline(
+                            points = path,
+                            color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
+                            width = 8f
+                        )
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(32.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "地図を表示できません",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "MAPS_API_KEY が未設定、またはプレースホルダーです。local.properties を確認してください。",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
 
-            if (!hasPermission && !state.isTracking) {
+            if (!hasPermission && !state.isTracking && isMapsApiKeyConfigured) {
                 Card(
                     modifier = Modifier
                         .align(Alignment.Center)

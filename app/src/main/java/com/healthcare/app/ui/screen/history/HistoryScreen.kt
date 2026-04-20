@@ -45,11 +45,13 @@ import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.healthcare.app.data.entity.WalkingSession
 import com.healthcare.app.util.DateUtils
+import com.healthcare.app.util.MapsApiKeyValidator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val isMapsApiKeyConfigured = MapsApiKeyValidator.isConfigured()
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (state.selectedSession != null) {
@@ -118,32 +120,54 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
                 }
             }
 
-            GoogleMap(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                cameraPositionState = cameraPositionState,
-                uiSettings = MapUiSettings(zoomControlsEnabled = true)
-            ) {
-                if (points.size >= 2) {
-                    val path = points.map { LatLng(it.latitude, it.longitude) }
-                    Polyline(
-                        points = path,
-                        color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
-                        width = 8f
-                    )
-                    // Start marker
-                    Marker(
-                        state = MarkerState(position = path.first()),
-                        title = "スタート",
-                        snippet = DateUtils.formatTime(points.first().timestamp)
-                    )
-                    // End marker
-                    Marker(
-                        state = MarkerState(position = path.last()),
-                        title = "ゴール",
-                        snippet = DateUtils.formatTime(points.last().timestamp)
-                    )
+            if (isMapsApiKeyConfigured) {
+                GoogleMap(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    cameraPositionState = cameraPositionState,
+                    uiSettings = MapUiSettings(zoomControlsEnabled = true)
+                ) {
+                    if (points.size >= 2) {
+                        val path = points.map { LatLng(it.latitude, it.longitude) }
+                        Polyline(
+                            points = path,
+                            color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
+                            width = 8f
+                        )
+                        // Start marker
+                        Marker(
+                            state = MarkerState(position = path.first()),
+                            title = "スタート",
+                            snippet = DateUtils.formatTime(points.first().timestamp)
+                        )
+                        // End marker
+                        Marker(
+                            state = MarkerState(position = path.last()),
+                            title = "ゴール",
+                            snippet = DateUtils.formatTime(points.last().timestamp)
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            text = "地図を表示できません。MAPS_API_KEY が未設定、またはプレースホルダーです。",
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
                 }
             }
         } else {
