@@ -11,31 +11,45 @@ plugins {
 
 android {
     namespace = "com.healthcare.app"
-    compileSdk = 34
+    compileSdk = 36
+
+    // Read local.properties
+    val localProps = Properties()
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.inputStream().use { localProps.load(it) }
+    }
 
     defaultConfig {
         applicationId = "jp.co.rssh_jp.healthcareap"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 1
+        targetSdk = 36
+        versionCode = 2
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Read Maps API key from local.properties
-        val localProps = Properties()
-        val localPropsFile = rootProject.file("local.properties")
-        if (localPropsFile.exists()) {
-            localPropsFile.inputStream().use { localProps.load(it) }
-        }
         val mapsApiKey = localProps.getProperty("MAPS_API_KEY", "")
         val escapedMapsApiKey = mapsApiKey.replace("\\", "\\\\").replace("\"", "\\\"")
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "MAPS_API_KEY", "\"$escapedMapsApiKey\"")
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = localProps.getProperty("KEYSTORE_PATH", "")
+            if (keystorePath.isNotEmpty()) {
+                storeFile = file(keystorePath)
+                storePassword = localProps.getProperty("KEYSTORE_PASSWORD", "")
+                keyAlias = localProps.getProperty("KEY_ALIAS", "")
+                keyPassword = localProps.getProperty("KEY_PASSWORD", "")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
