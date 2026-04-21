@@ -32,13 +32,17 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.healthcare.app.data.entity.SyncStatus
 import com.healthcare.app.data.entity.WalkingSession
 import com.healthcare.app.util.DateUtils
@@ -51,6 +55,14 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         viewModel.onSignInResult(result)
+    }
+
+    // 画面が RESUMED になるたびに未同期セッションの自動再試行を行う
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.retrySyncIfNeeded()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

@@ -7,13 +7,19 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseUser
+import com.healthcare.app.data.entity.SyncStatus
 import com.healthcare.app.data.entity.WalkingSession
 import com.healthcare.app.data.repository.AuthRepository
 import com.healthcare.app.data.repository.FirestoreSyncRepository
 import com.healthcare.app.data.repository.WalkingRepository
 import com.healthcare.app.service.LocationTrackingService
+import com.healthcare.app.sync.SyncWorker
 import com.healthcare.app.util.DateUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import android.content.Context
+import androidx.work.ExistingWorkPolicy
+import androidx.work.WorkManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +45,7 @@ data class HomeUiState(
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: WalkingRepository,
     private val authRepository: AuthRepository,
     private val firestoreSyncRepository: FirestoreSyncRepository,
@@ -131,5 +138,23 @@ class HomeViewModel @Inject constructor(
 
     fun dismissAuthError() {
         _uiState.update { it.copy(authError = null) }
+    }
+
+    /**
+     * サインイン済みで未同期（PENDING/FAILED）セッションがあれば SyncWorker を起動する。
+     * ホーム画面への復帰時に自動呼び出しされる。
+     */
+    fun retrySyncIfNeeded() {
+        val user = _uiState.value.currentUser ?: return
+        val hasPendingOrFailed = _uiState.value.recentSessions.any {
+            it.syncStatus == SyncStatus.PENDING || it.syncStatus == SyncStatus.FAILED
+        }
+        if (!hasPendingOrFailed) return
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            SyncWorker.UNIQUE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            SyncWorker.buildOneTimeRequest()
+        )
     }
 }
