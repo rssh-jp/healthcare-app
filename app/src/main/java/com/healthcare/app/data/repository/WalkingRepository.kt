@@ -45,6 +45,8 @@ class WalkingRepository @Inject constructor(
 
     suspend fun getActiveSession(): WalkingSession? = sessionDao.getActiveSession()
 
+    suspend fun getAllActiveSessions(): List<WalkingSession> = sessionDao.getAllActiveSessions()
+
     fun observeActiveSession(): Flow<WalkingSession?> = sessionDao.observeActiveSession()
 
     fun observeCompletedSessions(): Flow<List<WalkingSession>> = sessionDao.observeCompletedSessions()

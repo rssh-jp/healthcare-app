@@ -57,27 +57,30 @@ class HealthcareApp : Application(), Configuration.Provider {
     /**
      * サービスが動いていないのに isActive=1 のまま残っているセッション（stuck session）を
      * 完了状態に修復し、次回の SyncWorker に拾わせる。
-     * 旧バージョンの read-modify-write 競合で isActive が true に戻ってしまったケースが対象。
+     * LIMIT 1 ではなく全件取得して複数 stuck session に対応する。
      */
     private fun cleanupStuckSessions() {
         appScope.launch {
-            // isTracking が false（サービス非稼働）のとき、残存アクティブセッションは stuck
+            // isTracking が true のときはサービス稼働中なのでスキップ
             if (LocationTrackingService.isTracking.value) return@launch
-            val stuck = walkingRepository.getActiveSession()
-            if (stuck != null) {
-                Log.w(TAG, "cleanupStuckSessions: found stuck session id=${stuck.id}, ending it")
+            val stuckSessions = walkingRepository.getAllActiveSessions()
+            if (stuckSessions.isEmpty()) return@launch
+
+            Log.w(TAG, "cleanupStuckSessions: found ${stuckSessions.size} stuck session(s), fixing...")
+            for (stuck in stuckSessions) {
+                Log.w(TAG, "cleanupStuckSessions: ending stuck session id=${stuck.id}")
                 walkingRepository.endSession(
                     sessionId = stuck.id,
                     totalDistance = stuck.totalDistanceMeters,
                     totalCalories = stuck.totalCalories
                 )
-                // stuck session を修復した後、強制的に sync を再スケジュール
-                WorkManager.getInstance(this@HealthcareApp).enqueueUniqueWork(
-                    SyncWorker.UNIQUE_WORK_NAME,
-                    ExistingWorkPolicy.REPLACE,
-                    SyncWorker.buildOneTimeRequest()
-                )
             }
+            // 全件修復後に sync を強制再スケジュール
+            WorkManager.getInstance(this@HealthcareApp).enqueueUniqueWork(
+                SyncWorker.UNIQUE_WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                SyncWorker.buildOneTimeRequest()
+            )
         }
     }
 

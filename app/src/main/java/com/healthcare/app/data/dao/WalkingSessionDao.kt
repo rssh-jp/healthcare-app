@@ -18,6 +18,10 @@ interface WalkingSessionDao {
     @Query("SELECT * FROM walking_sessions WHERE isActive = 1 LIMIT 1")
     suspend fun getActiveSession(): WalkingSession?
 
+    /** サービス非稼働時に isActive=1 で残った全 stuck session を返す */
+    @Query("SELECT * FROM walking_sessions WHERE isActive = 1")
+    suspend fun getAllActiveSessions(): List<WalkingSession>
+
     @Query("SELECT * FROM walking_sessions WHERE isActive = 1 LIMIT 1")
     fun observeActiveSession(): Flow<WalkingSession?>
 
