@@ -99,6 +99,34 @@
 
 ---
 
+## 最新トラブルシュート結果（2026-04-21 追記）
+
+### 根本原因の再特定
+
+トラブルシュートの過程で以下が判明した:
+
+| 発見 | 詳細 |
+|---|---|
+| **Firestore は test mode（全書き込み許可）** | REST API での匿名書き込みが成功。`firestore.rules` は未デプロイだが書き込みブロックではない |
+| **Firestore には 0 件のデータ** | セッションが一度も Firestore に到達していない |
+| **真の根本原因: stuck session** | BUG-RACE-001 により `isActive=1` のまま残ったセッションが `getPendingSessions()` の `WHERE isActive=0` フィルタに引っかからず SyncWorker/syncOnLogin に無視され続けていた |
+
+### 追加修正（コミット `0582b0b`）
+
+| 修正 | 内容 |
+|---|---|
+| **`HealthcareApp.cleanupStuckSessions()`** | 起動時に `isTracking=false` かつ `isActive=1` のセッションを検出し `endSession()` で修復。修復後に `ExistingWorkPolicy.REPLACE` で SyncWorker を強制再スケジュール |
+| **`WalkingRepository` を `HealthcareApp` に DI** | Room アクセスのため |
+
+### ユーザーが取るべき次のステップ
+
+1. 新APKをビルド・インストール
+2. アプリ起動 → 自動で stuck session 修復 → SyncWorker が Firestore にアップロード
+3. Firestore Console で `users/{uid}/walking_sessions` にデータが入ることを確認
+4. （任意・セキュリティ強化）`firebase deploy --only firestore:rules` で `firestore.rules` をデプロイ
+
+---
+
 ## 合格基準の充足サマリー
 
 | 基準 | 状態 |
