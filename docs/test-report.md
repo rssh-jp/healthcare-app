@@ -349,3 +349,113 @@ e: AppNavigation.kt:79:34 Overload resolution ambiguity between candidates: fun 
 - AC-SYNC-1〜4（Firestore への実際の書き込み・読み込み確認）
 - AC-MULTI-1〜3（複数端末での動作確認）
 - AC-OFFLINE-1〜3（ネットワーク遮断・復帰での動作確認）
+
+---
+
+---
+
+# テストレポート: Firebase 転送バグ修正 (トラブルシュート Phase 2)
+
+- **テスト実施日**: 2026-04-21
+- **テスト担当**: Copilot Agent
+- **対象**: Firebase へセッションが転送されない問題の調査・修正
+- **コミット**: `c560478`
+
+---
+
+## テスト結果サマリー
+
+| カテゴリ | PASS | FAIL | 備考 |
+|---|---|---|---|
+| ビルド検証 | 1 | 0 | BUILD SUCCESSFUL (3m 9s) |
+| BUG-PERIODIC-001 periodic sync 削除 | 1 | 0 | 静的解析で検証 |
+| BUG-NONET-001 no-network リトライ欠落 | 1 | 0 | 静的解析で検証 |
+| BUG-SILENT-001 無音エラー | 1 | 0 | 静的解析で検証 |
+
+**総合判定: PASS（静的検証）**
+
+---
+
+## 1. ビルド検証
+
+```
+./gradlew assembleDebug -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
+```
+
+**結果: PASS** — BUILD SUCCESSFUL in 3m 9s
+
+---
+
+## 2. BUG-PERIODIC-001: periodic sync が削除されていた
+
+### 不具合内容
+`SyncWorker.kt` から `PERIODIC_WORK_NAME` と `buildPeriodicRequest()` が削除され、`HealthcareApp.kt` も `enqueueUniquePeriodicWork` を使わない実装に変更されていた。これにより one-time sync（起動時・onStop）が失敗した場合のフォールバックが完全に失われ、同期漏れが残存し続ける。
+
+### 修正内容
+- `SyncWorker.kt`: `PERIODIC_WORK_NAME = "periodic_sync"` と `buildPeriodicRequest()`（15分周期）を復元
+- `HealthcareApp.kt`: `schedulePeriodicSync()` を追加し `enqueueUniquePeriodicWork(KEEP)` を呼ぶように修正
+
+### 検証結果: **PASS（静的解析）**
+- `SyncWorker.PERIODIC_WORK_NAME` と `buildPeriodicRequest()` の存在を確認
+- `HealthcareApp.onCreate` から `schedulePeriodicSync()` が呼ばれることを確認
+- ビルド成功
+
+---
+
+## 3. BUG-NONET-001: no-network 時に SyncWorker がスケジュールされない
+
+### 不具合内容
+`LocationTrackingService.trySyncSession` でネットワーク不在（`isConnectedNow()=false`）の場合、即座に `return` するが `scheduleSyncWorker()` を呼ばないため SyncWorker がエンキューされない。これにより、セッション終了時にオフラインだった場合、次の periodic sync まで（最大 15 分）転送が試みられない。また `NET_CAPABILITY_VALIDATED` の追加によりネットワーク判定が厳しくなり false negative が増加していた。
+
+### 修正内容
+`trySyncSession` の no-network 早期 return パスに `scheduleSyncWorker()` を追加。ネットワークが戻り次第 WorkManager が自動実行する。
+
+```kotlin
+if (!networkMonitor.isConnectedNow()) {
+    Log.d(TAG, "trySyncSession: no network, scheduling SyncWorker for later")
+    scheduleSyncWorker()
+    return
+}
+```
+
+### 検証結果: **PASS（静的解析）**
+- no-network 早期 return 前に `scheduleSyncWorker()` が呼ばれることを確認
+
+---
+
+## 4. BUG-SILENT-001: エラーがサイレントで Logcat に出力されない
+
+### 不具合内容
+`FirestoreSyncRepository.uploadSession` と `syncOnLogin` の全 `catch` ブロックが `Result.failure(e)` を返すのみで `Log.w` が一切なかった。Firestore の権限エラー・ネットワークエラー・認証エラーなどの根本原因が Logcat で確認不可能だった。
+
+### 修正内容
+- `FirestoreSyncRepository`: `uploadSession` 成功時に `Log.d`、失敗時に `Log.w(TAG, ..., e)` を追加
+- `FirestoreSyncRepository.syncOnLogin`: 個別アップロード失敗時に `Log.w` を追加
+- `SyncWorker.doWork`: 各セッションの成功/失敗と retry 判定を `Log.d/w` で出力
+- `LocationTrackingService.trySyncSession`: 認証なし / no-network / 成功 / 失敗を全パスで `Log.d/w` 出力
+
+### 検証結果: **PASS（静的解析）**
+
+---
+
+## 5. 実機検証手順（次ステップ）
+
+1. apk を実機インストール後、Logcat で以下のタグをフィルタ:
+   - `SyncWorker`, `FirestoreSyncRepository`, `LocationTrackingService`
+2. セッション完了後に `uploadSession: success uuid=...` が出ることを確認
+3. エラーが出た場合は `Log.w` の例外クラス（例: `FirebaseFirestoreException`）を確認
+4. ログが全く出ない場合は Firebase Console の **Authentication** でサインイン状態を確認
+
+---
+
+## 6. 優先度別課題一覧（更新）
+
+| ID | 種別 | 内容 | 優先度 | 状態 |
+|---|---|---|---|---|
+| BUG-RACE-001 | バグ | endSession / updateSessionStats 競合状態 | P0 | ✅ 修正済み (コミット `0a2fafa`) |
+| BUG-PERIODIC-001 | バグ | periodic sync が削除されていた | P0 | ✅ 修正済み (コミット `c560478`) |
+| BUG-NONET-001 | バグ | no-network 時に SyncWorker がスケジュールされない | P1 | ✅ 修正済み (コミット `c560478`) |
+| BUG-SILENT-001 | 品質 | Firestore エラーが無音 | P1 | ✅ 修正済み (コミット `c560478`) |
+| NOTE-001 | 環境 | `google-services.json` がプレースホルダー | P0 | 未対応（実機作業） |
+| SHOULD-2 | セキュリティ | `fetchAndMerge` の uid 引数 | P2 | 未対応 |
+| SHOULD-5 | 品質 | Firestore 全件一括取得（ページネーションなし） | P2 | 未対応 |

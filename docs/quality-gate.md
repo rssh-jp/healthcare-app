@@ -29,6 +29,9 @@
 | MUST-1 | `WalkingSession.sessionUuid` が空文字列デフォルト → 全セッション同期永続失敗 | ✅ **修正済み** (`UUID.randomUUID().toString()` に変更) |
 | BUG-001 | `HomeScreen.kt` の `HomeScreen` / `StatCard` / `SessionCard` 重複定義 → ビルドエラー | ✅ **修正済み** (旧実装を削除、各関数1定義のみ) |
 | BUG-RACE-001 | `endSession` / `updateSessionStats` の競合状態 → 履歴が保存されない根本原因 | ✅ **修正済み** (read-modify-write → ターゲット UPDATE クエリに変更) |
+| BUG-PERIODIC-001 | `PERIODIC_WORK_NAME` / `buildPeriodicRequest()` が削除されていた → フォールバック同期が機能しない | ✅ **修正済み** (復元、コミット `c560478`) |
+| BUG-NONET-001 | no-network 時に `trySyncSession` が `scheduleSyncWorker()` を呼ばない → セッションが最大 15 分転送されない | ✅ **修正済み** (コミット `c560478`) |
+| BUG-SILENT-001 | Firestore エラーが全て無音 → 根本原因の特定が不可能 | ✅ **修正済み** (Log.d/w 追加、コミット `c560478`) |
 
 **コード実態確認**:
 - `WalkingSession.kt` L11: `val sessionUuid: String = UUID.randomUUID().toString()` ✅
@@ -100,9 +103,10 @@
 
 | 基準 | 状態 |
 |---|---|
-| すべての MUST 指摘が解消されている | ✅ MUST-1 / BUG-001 ともに修正済み |
+| すべての MUST 指摘が解消されている | ✅ MUST-1 / BUG-001 / BUG-RACE-001 ともに修正済み |
 | ビルドが成功している | ✅ BUILD SUCCESSFUL |
 | 主要受け入れ条件（AC-AUTH/SYNC/MULTI/OFFLINE）が静的に満たされている | ✅ 19/19 PASS |
+| Firebase 転送バグ（periodic削除・no-networkリトライ・無音エラー）が修正済み | ✅ BUG-PERIODIC-001 / BUG-NONET-001 / BUG-SILENT-001 修正済み |
 | 残存する SHOULD/NIT 指摘が即時リリースブロッカーでない | ✅ 機能要件に直接影響しない（詳細は残存リスク一覧参照） |
 
 ---
