@@ -1,19 +1,52 @@
+### Android ###
 *.iml
-.gradle
 /local.properties
-/.idea
+local.properties
 /build
 /app/build
 /captures
 .externalNativeBuild
 .cxx
-local.properties
 
-# Kotlin build cache
+### Gradle ###
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+
+### IntelliJ / Android Studio ###
+/.idea/
+*.iws
+*.ipr
+out/
+
+### Kotlin ###
 .kotlin/
 
-# Build output logs
+### Build artifacts ###
 build_output.txt
+*.apk
+*.aab
+*.ap_
+*.dex
 
-# Firebase / Google Services credentials (use google-services.json.example as template)
+### Keystore / signing credentials ###
+*.jks
+*.keystore
+*.p12
+release.properties
+keystore.properties
+
+### Firebase / Google Services credentials ###
+# google-services.json.example はテンプレートとしてコミット対象
 app/google-services.json
+
+### Firebase CLI ###
+.firebaserc
+.firebase/
+
+### macOS ###
+.DS_Store
+
+### Windows ###
+Thumbs.db
+ehthumbs.db
+Desktop.ini

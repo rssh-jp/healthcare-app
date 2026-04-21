@@ -21,7 +21,8 @@ data class HistoryUiState(
     val selectedSessionPoints: List<WalkingPoint> = emptyList(),
     val isSelectionMode: Boolean = false,
     val selectedSessionIds: Set<Long> = emptySet(),
-    val showDeleteConfirmDialog: Boolean = false
+    val showDeleteConfirmDialog: Boolean = false,
+    val deleteError: String? = null
 )
 
 @HiltViewModel
@@ -102,6 +103,10 @@ class HistoryViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(showDeleteConfirmDialog = false)
     }
 
+    fun dismissDeleteError() {
+        _uiState.value = _uiState.value.copy(deleteError = null)
+    }
+
     fun confirmDeleteSelected() {
         val idsToDelete = _uiState.value.selectedSessionIds
         if (idsToDelete.isEmpty()) return
@@ -110,14 +115,26 @@ class HistoryViewModel @Inject constructor(
             // 削除前に sessionUuid を取得して Firestore からも削除
             val sessions = repository.getSessionsByIds(idsToDelete)
             val uuids = sessions.map { it.sessionUuid }.filter { it.isNotEmpty() }
+            var deleteError: String? = null
             if (uuids.isNotEmpty()) {
-                firestoreSyncRepository.deleteSessions(uuids)
+                val result = firestoreSyncRepository.deleteSessions(uuids)
+                result.onFailure { e ->
+                    deleteError = when {
+                        e.message?.contains("PERMISSION_DENIED") == true ->
+                            "クラウド削除失敗: セキュリティルールが未設定です"
+                        e.message?.contains("UNAVAILABLE") == true ||
+                        e.message?.contains("NETWORK") == true ->
+                            "クラウド削除失敗: ネットワークエラー"
+                        else -> "クラウド削除失敗: ${e.message}"
+                    }
+                }
             }
             repository.deleteSessionsByIds(idsToDelete)
             _uiState.value = _uiState.value.copy(
                 isSelectionMode = false,
                 selectedSessionIds = emptySet(),
-                showDeleteConfirmDialog = false
+                showDeleteConfirmDialog = false,
+                deleteError = deleteError
             )
         }
     }

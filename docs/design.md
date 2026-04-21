@@ -221,18 +221,32 @@ users/
   {uid}/
     walking_sessions/
       {sessionUuid}/
-        sessionId      : String   (= sessionUuid、クライアント生成 UUID)
-        startTime      : Long     (epoch ミリ秒)
-        endTime        : Long     (epoch ミリ秒、未終了時は null)
+        sessionId      : String    (= sessionUuid、クライアント生成 UUID)
+        startTime      : Long      (epoch ミリ秒)
+        endTime        : Long      (epoch ミリ秒、未終了時は null)
         distanceMeters : Double
         caloriesBurned : Double
-        geoPoints      : Array<GeoPoint>  (lat/lng ペア配列)
+        geoFlat        : Array<Double>  (フラット座標配列 ※後述)
         syncedAt       : Timestamp (サーバー書き込み時刻)
 ```
 
-### GeoPoint 配列のサイズ制限対策
+### geoFlat フォーマット（フラット配列）
+
+**Firestore はネスト配列（Arrays within Arrays）を禁止している**ため、座標を `[[lat1,lng1],[lat2,lng2],...]` 形式で保存することができない。
+
+この制約を回避するため、緯度・経度を交互に並べた **フラット配列** で保存する。
+
+```
+geoFlat = [lat1, lng1, lat2, lng2, lat3, lng3, ...]
+           └─ index i ──┘  └─ index i+1 ──┘
+```
+
+- インデックス `i`（偶数）が緯度、`i+1` が経度
+- 読み込み時は 2 要素ずつ取り出して `WalkingPoint` に復元する
+
+### サイズ制限対策
 - Firestore ドキュメント上限は 1 MiB。
-- `WalkingPoint` 1 件を GeoPoint 約 50 byte とすると、上限は約 20,000 件。
+- `Double` 1 値 = 8 byte、1 点（lat+lng）= 16 byte とすると上限は約 62,000 件だが、他フィールドの余裕を見て **20,000 点** を上限とする。
 - 実装では書き込み前に点数をチェックし、20,000 点超の場合は均等間引き（stride サンプリング）を行う。
 
 ---

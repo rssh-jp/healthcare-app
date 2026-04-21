@@ -271,6 +271,19 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
                 }
             )
         }
+
+        if (state.deleteError != null) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissDeleteError() },
+                title = { Text("削除エラー") },
+                text = { Text(state.deleteError ?: "") },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.dismissDeleteError() }) {
+                        Text("閉じる")
+                    }
+                }
+            )
+        }
     }
 }
 
