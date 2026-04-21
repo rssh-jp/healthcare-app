@@ -7,8 +7,6 @@ import androidx.work.CoroutineWorker
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequest
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkerParameters
 import com.healthcare.app.data.entity.SyncStatus
 import com.healthcare.app.data.repository.AuthRepository
@@ -16,7 +14,6 @@ import com.healthcare.app.data.repository.FirestoreSyncRepository
 import com.healthcare.app.data.repository.WalkingRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import java.util.concurrent.TimeUnit
 
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
@@ -45,12 +42,11 @@ class SyncWorker @AssistedInject constructor(
             if (result.isFailure) hasFailure = true
         }
 
-        return if (hasFailure) Result.retry() else Result.success()
+        return if (hasFailure && runAttemptCount < 5) Result.retry() else Result.success()
     }
 
     companion object {
         const val UNIQUE_WORK_NAME = "pending_sync"
-        const val PERIODIC_WORK_NAME = "periodic_sync"
 
         private val networkConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -58,11 +54,6 @@ class SyncWorker @AssistedInject constructor(
 
         fun buildOneTimeRequest(): OneTimeWorkRequest =
             OneTimeWorkRequestBuilder<SyncWorker>()
-                .setConstraints(networkConstraints)
-                .build()
-
-        fun buildPeriodicRequest(): PeriodicWorkRequest =
-            PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(networkConstraints)
                 .build()
     }

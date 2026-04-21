@@ -27,25 +27,18 @@ class WalkingRepository @Inject constructor(
     }
 
     suspend fun endSession(sessionId: Long, totalDistance: Double, totalCalories: Double) {
-        val session = sessionDao.getById(sessionId) ?: return
-        sessionDao.update(
-            session.copy(
-                endTime = System.currentTimeMillis(),
-                totalDistanceMeters = totalDistance,
-                totalCalories = totalCalories,
-                isActive = false
-            )
+        // ターゲット UPDATE により read-modify-write 競合を回避する
+        sessionDao.completeSession(
+            id = sessionId,
+            endTime = System.currentTimeMillis(),
+            distance = totalDistance,
+            calories = totalCalories
         )
     }
 
     suspend fun updateSessionStats(sessionId: Long, totalDistance: Double, totalCalories: Double) {
-        val session = sessionDao.getById(sessionId) ?: return
-        sessionDao.update(
-            session.copy(
-                totalDistanceMeters = totalDistance,
-                totalCalories = totalCalories
-            )
-        )
+        // isActive / endTime を変更しないターゲット UPDATE
+        sessionDao.updateStats(sessionId, totalDistance, totalCalories)
     }
 
     suspend fun getById(id: Long): WalkingSession? = sessionDao.getById(id)
@@ -86,8 +79,12 @@ class WalkingRepository @Inject constructor(
         }
     }
 
+    suspend fun getByUuid(uuid: String): WalkingSession? = sessionDao.getByUuid(uuid)
+
     // Point operations
     suspend fun addPoint(point: WalkingPoint) = pointDao.insert(point)
+
+    suspend fun addPoints(points: List<WalkingPoint>) = pointDao.insertAll(points)
 
     fun getPointsBySession(sessionId: Long): Flow<List<WalkingPoint>> =
         pointDao.getPointsBySession(sessionId)

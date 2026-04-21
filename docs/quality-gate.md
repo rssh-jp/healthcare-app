@@ -28,6 +28,7 @@
 |---|---|---|
 | MUST-1 | `WalkingSession.sessionUuid` が空文字列デフォルト → 全セッション同期永続失敗 | ✅ **修正済み** (`UUID.randomUUID().toString()` に変更) |
 | BUG-001 | `HomeScreen.kt` の `HomeScreen` / `StatCard` / `SessionCard` 重複定義 → ビルドエラー | ✅ **修正済み** (旧実装を削除、各関数1定義のみ) |
+| BUG-RACE-001 | `endSession` / `updateSessionStats` の競合状態 → 履歴が保存されない根本原因 | ✅ **修正済み** (read-modify-write → ターゲット UPDATE クエリに変更) |
 
 **コード実態確認**:
 - `WalkingSession.kt` L11: `val sessionUuid: String = UUID.randomUUID().toString()` ✅
@@ -53,19 +54,19 @@
 
 ### 優先度: 高（リリース前または早期対応推奨）
 
-| ID | ファイル | 内容 | リスク | 推奨対応 |
-|---|---|---|---|---|
-| SHOULD-4 | `firestore.rules` | `write` に `delete` を含む。クライアントから自身のセッションを Firestore 上で削除可能 | データ消失（誤実装・悪意あるクライアント） | `allow read, create, update:` に変更し `delete` を除外 |
-| SHOULD-2 | `FirestoreSyncRepository.kt` | `fetchAndMerge(uid: String, ...)` が外部から任意の `uid` を受け取れる | OWASP A01 観点の潜在的アクセス制御不備（Firestore Rules が最終防衛線） | 内部で `auth.currentUser?.uid` を取得するよう変更 |
-| SHOULD-6 | `SyncWorker.kt` | `Result.retry()` の上限未定義。ネットワーク障害長期化時にバッテリー・通信量を消費し続ける | UX劣化・端末リソース消費 | `runAttemptCount < 5` で上限を設ける |
+| ID | ファイル | 内容 | リスク | 推奨対応 | 状態 |
+|---|---|---|---|---|---|
+| SHOULD-4 | `firestore.rules` | `write` に `delete` を含む。クライアントから自身のセッションを Firestore 上で削除可能 | データ消失（誤実装・悪意あるクライアント） | `allow read, create, update:` に変更し `delete` を除外 | ✅ 修正済み |
+| SHOULD-2 | `FirestoreSyncRepository.kt` | `fetchAndMerge(uid: String, ...)` が外部から任意の `uid` を受け取れる | OWASP A01 観点の潜在的アクセス制御不備（Firestore Rules が最終防衛線） | 内部で `auth.currentUser?.uid` を取得するよう変更 | 未対応 |
+| SHOULD-6 | `SyncWorker.kt` | `Result.retry()` の上限未定義。ネットワーク障害長期化時にバッテリー・通信量を消費し続ける | UX劣化・端末リソース消費 | `runAttemptCount < 5` で上限を設ける | ✅ 修正済み |
 
 ### 優先度: 中（次スプリント対応推奨）
 
-| ID | ファイル | 内容 | リスク |
-|---|---|---|---|
-| SHOULD-1 | `SyncStatusConverter.kt` | `SyncStatus.valueOf(value)` が不正値で `IllegalArgumentException` をスロー | DB 破損・将来の enum 変更でクラッシュ |
-| SHOULD-5 | `FirestoreSyncRepository.kt` | Firestore から全セッションを一括取得（ページネーションなし） | セッション数増加でメモリ・Firestore 読み取りコスト・遅延が線形増加 |
-| SHOULD-7 | `NetworkMonitor.kt` | `NET_CAPABILITY_VALIDATED` を確認しない | キャプティブポータル環境で `isConnected = true` のまま同期失敗が続く |
+| ID | ファイル | 内容 | リスク | 状態 |
+|---|---|---|---|---|
+| SHOULD-1 | `SyncStatusConverter.kt` | `SyncStatus.valueOf(value)` が不正値で `IllegalArgumentException` をスロー | DB 破損・将来の enum 変更でクラッシュ | ✅ 修正済み |
+| SHOULD-5 | `FirestoreSyncRepository.kt` | Firestore から全セッションを一括取得（ページネーションなし） | セッション数増加でメモリ・Firestore 読み取りコスト・遅延が線形増加 | 未対応 |
+| SHOULD-7 | `NetworkMonitor.kt` | `NET_CAPABILITY_VALIDATED` を確認しない | キャプティブポータル環境で `isConnected = true` のまま同期失敗が続く | ✅ 修正済み |
 
 ### 優先度: 低（技術的負債として管理）
 

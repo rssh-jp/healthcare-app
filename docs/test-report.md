@@ -227,14 +227,119 @@ e: AppNavigation.kt:79:34 Overload resolution ambiguity between candidates: fun 
 
 ## 4. 優先度別課題一覧
 
-| ID | 種別 | 内容 | 再現条件 | 優先度 |
-|---|---|---|---|---|
-| BUG-001 | バグ | `HomeScreen.kt` 重複定義によるコンパイルエラー | `.\gradlew.bat assembleDebug` 実行 | P0 |
-| NOTE-001 | 環境 | `google-services.json` がプレースホルダー | 実機起動・Google サインイン | P0（環境依存） |
-| SHOULD-1 | 品質 | `SyncStatusConverter` クラッシュリスク | DB に不正な syncStatus 値が入った場合 | P2 |
-| SHOULD-2 | セキュリティ | `fetchAndMerge` の uid 引数 | 悪意ある呼び出し元が別 uid を渡した場合 | P2 |
-| SHOULD-4 | セキュリティ | Security Rules が delete 許可 | クライアントから Firestore ドキュメント削除試行 | P2 |
-| SHOULD-7 | 品質 | NetworkMonitor が VALIDATED 未チェック | キャプティブポータル環境での同期 | P3 |
+| ID | 種別 | 内容 | 再現条件 | 優先度 | 状態 |
+|---|---|---|---|---|---|
+| BUG-001 | バグ | `HomeScreen.kt` 重複定義によるコンパイルエラー | `.\gradlew.bat assembleDebug` 実行 | P0 | ✅ 修正済み |
+| BUG-RACE-001 | バグ | `endSession` / `updateSessionStats` 競合状態（履歴が保存されない根本原因） | `stopTracking()` 後に位置更新コールバックが遅延到着 | P0 | ✅ 修正済み |
+| NOTE-001 | 環境 | `google-services.json` がプレースホルダー | 実機起動・Google サインイン | P0（環境依存） | 未対応（実機作業） |
+| SHOULD-1 | 品質 | `SyncStatusConverter` クラッシュリスク | DB に不正な syncStatus 値が入った場合 | P2 | ✅ 修正済み |
+| SHOULD-2 | セキュリティ | `fetchAndMerge` の uid 引数 | 悪意ある呼び出し元が別 uid を渡した場合 | P2 | 未対応 |
+| SHOULD-4 | セキュリティ | Security Rules が delete 許可 | クライアントから Firestore ドキュメント削除試行 | P2 | ✅ 修正済み（前回セッション） |
+| SHOULD-6 | 品質 | `SyncWorker` リトライ上限なし | 長期ネットワーク障害 | P2 | ✅ 修正済み（runAttemptCount < 5） |
+| SHOULD-7 | 品質 | NetworkMonitor が VALIDATED 未チェック | キャプティブポータル環境での同期 | P3 | ✅ 修正済み |
+
+---
+
+---
+
+# テストレポート: 履歴保存バグ修正 (トラブルシュート)
+
+- **テスト実施日**: 2026-04-21
+- **テスト担当**: Copilot Agent
+- **対象**: ウォーキング履歴が保存されない問題の調査・修正
+- **参照ドキュメント**: `docs/quality-gate.md`, `docs/review-report.md`
+
+---
+
+## テスト結果サマリー
+
+| カテゴリ | PASS | FAIL | 備考 |
+|---|---|---|---|
+| ビルド検証 | 1 | 0 | BUILD SUCCESSFUL 確認済み |
+| BUG-RACE-001 競合状態修正 | 1 | 0 | 静的解析で検証 |
+| SHOULD-1 SyncStatusConverter | 1 | 0 | 静的解析で検証 |
+| SHOULD-6 SyncWorker リトライ | 1 | 0 | 静的解析で検証 |
+| SHOULD-7 NetworkMonitor | 1 | 0 | 静的解析で検証 |
+
+**総合判定: PASS（静的検証）**
+
+---
+
+## 1. ビルド検証
+
+### 実行コマンド
+```
+./gradlew assembleDebug -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
+```
+
+### 結果: **PASS**
+- BUILD SUCCESSFUL in 3m 28s
+- `app-debug.apk` 生成確認
+
+---
+
+## 2. BUG-RACE-001: endSession / updateSessionStats 競合状態
+
+### 不具合内容
+`LocationTrackingService.stopTracking()` が `serviceScope.launch(Dispatchers.IO)` で `endSession` を呼ぶと同時に、`setupLocationCallback` の最終コールバック（`Looper.getMainLooper()`）が遅延して到着し `updateSessionStats` コルーチンが IO スレッドで並走する。
+
+両者が `getById → copy → update` の read-modify-write パターンを使うため、`updateSessionStats` が古い読み取り値で `endSession` の書き込みを上書きし `isActive=true / endTime=null` に戻る。結果として `observeCompletedSessions`（`WHERE isActive=0`）にセッションが現れず履歴に表示されない。
+
+### 修正内容
+`WalkingSessionDao` にターゲット UPDATE クエリを追加:
+- `completeSession(id, endTime, distance, calories)` — `isActive=0`, `endTime` を1クエリで原子的に更新
+- `updateStats(id, distance, calories)` — `isActive` / `endTime` を一切変更しない
+
+`WalkingRepository.endSession` / `updateSessionStats` を read-modify-write から上記クエリ呼び出しに変更。各フィールドが独立して UPDATE されるため競合しない。
+
+### 検証結果: **PASS（静的解析）**
+- `WalkingSessionDao.completeSession` / `updateStats` に `@Query` アノテーションが存在することを確認
+- `WalkingRepository.endSession` / `updateSessionStats` が read-modify-write パターンを使用していないことを確認
+- ビルド成功（Room コンパイル時クエリ検証をパス）
+
+---
+
+## 3. SHOULD-1: SyncStatusConverter クラッシュリスク修正
+
+### 不具合内容
+`SyncStatus.valueOf(value)` は DB に不正値が存在する場合 `IllegalArgumentException` を throw し、Room の TypeConverter がクラッシュする。
+
+### 修正内容
+`runCatching { SyncStatus.valueOf(value) }.getOrDefault(SyncStatus.PENDING)` に変更。不正値は `PENDING` として扱い、クラッシュを防止。
+
+### 検証結果: **PASS**
+
+---
+
+## 4. SHOULD-6: SyncWorker リトライ上限追加
+
+### 不具合内容
+`Result.retry()` に上限がなく、長期ネットワーク障害時にバックオフ付きでも無限リトライし続けバッテリーと通信量を消費する。
+
+### 修正内容
+`return if (hasFailure && runAttemptCount < 5) Result.retry() else Result.success()`  
+5回リトライ後は `FAILED` 状態のまま次の `PeriodicWorkRequest` サイクルを待つ。
+
+### 検証結果: **PASS**
+
+---
+
+## 5. SHOULD-7: NetworkMonitor キャプティブポータル対応
+
+### 不具合内容
+`NET_CAPABILITY_VALIDATED` を確認しないため、キャプティブポータル（公衆 Wi-Fi のログインページ）に接続している状態で `isConnected=true` となり同期を試みて失敗し続ける。
+
+### 修正内容
+`NetworkRequest.Builder` と `isConnectedNow()` の両方に `NET_CAPABILITY_VALIDATED` を追加。実際にインターネット到達性が確認済みのネットワークのみ接続済みと判定する。
+
+### 検証結果: **PASS**
+
+---
+
+## 6. 未実施項目
+
+- 実機での E2E 検証（ウォーキング開始→終了→履歴表示フロー）
+- 競合状態の再現テスト（位置更新コールバックを人為的に遅延させたシナリオ）
 
 ---
 

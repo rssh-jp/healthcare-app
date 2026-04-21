@@ -30,6 +30,14 @@ interface WalkingSessionDao {
     @Query("DELETE FROM walking_sessions WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: Collection<Long>)
 
+    /** セッション完了: endTime・distance・calories・isActive を1クエリで原子的に更新する */
+    @Query("UPDATE walking_sessions SET endTime = :endTime, totalDistanceMeters = :distance, totalCalories = :calories, isActive = 0 WHERE id = :id")
+    suspend fun completeSession(id: Long, endTime: Long, distance: Double, calories: Double)
+
+    /** 走行中の距離・カロリーのみを更新する (isActive / endTime は変更しない) */
+    @Query("UPDATE walking_sessions SET totalDistanceMeters = :distance, totalCalories = :calories WHERE id = :id")
+    suspend fun updateStats(id: Long, distance: Double, calories: Double)
+
     @Query("SELECT * FROM walking_sessions WHERE id IN (:ids)")
     suspend fun getByIds(ids: Collection<Long>): List<WalkingSession>
 
