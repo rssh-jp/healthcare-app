@@ -22,6 +22,9 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +39,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.healthcare.app.data.entity.SyncStatus
 import com.healthcare.app.data.entity.WalkingSession
 import com.healthcare.app.util.DateUtils
 
@@ -146,7 +150,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     )
                 }
                 items(state.recentSessions) { session ->
-                    SessionCard(session = session)
+                    SessionCard(session = session, isSignedIn = state.currentUser != null)
                 }
             }
         }
@@ -245,7 +249,7 @@ private fun StatCard(
 }
 
 @Composable
-private fun SessionCard(session: WalkingSession) {
+private fun SessionCard(session: WalkingSession, isSignedIn: Boolean = false) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -278,6 +282,45 @@ private fun SessionCard(session: WalkingSession) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (isSignedIn) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    when (session.syncStatus) {
+                        SyncStatus.SYNCED -> Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = "同期済み",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        SyncStatus.FAILED -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudOff,
+                                contentDescription = "同期失敗",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text(
+                                text = "同期失敗",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        SyncStatus.PENDING -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = "未同期",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.size(4.dp))
+                            Text(
+                                text = "未同期",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
         }
     }

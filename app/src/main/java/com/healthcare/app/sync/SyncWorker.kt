@@ -45,13 +45,25 @@ class SyncWorker @AssistedInject constructor(
 
         Log.d(TAG, "doWork: uploading ${pending.size} session(s) for uid=$uid")
         var hasFailure = false
-        pending.forEach { session ->
+        for (session in pending) {
             val points = walkingRepository.getPointsBySessionOnce(session.id)
             val result = firestoreSyncRepository.uploadSession(session, points)
             if (result.isSuccess) {
                 Log.d(TAG, "doWork: session ${session.id} (uuid=${session.sessionUuid}) uploaded")
             } else {
-                Log.w(TAG, "doWork: session ${session.id} upload failed", result.exceptionOrNull())
+                val ex = result.exceptionOrNull()
+                if (ex?.message?.contains("PERMISSION_DENIED") == true) {
+                    Log.e(TAG, "doWork: PERMISSION_DENIED – Firestore rules are blocking writes. " +
+                        "Deploy firestore.rules via Firebase Console or `firebase deploy --only firestore:rules`.")
+                    // ルール未設定はリトライしても無駄なので即終了
+                    walkingRepository.updateSyncStatus(
+                        id = session.id,
+                        status = SyncStatus.FAILED,
+                        firestoreDocId = null
+                    )
+                    return Result.failure()
+                }
+                Log.w(TAG, "doWork: session ${session.id} upload failed", ex)
                 hasFailure = true
             }
             walkingRepository.updateSyncStatus(

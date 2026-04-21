@@ -93,7 +93,18 @@ class HomeViewModel @Inject constructor(
                 authRepository.signInWithGoogleIdToken(idToken)
                     .onSuccess { user ->
                         // 初回ログイン: ローカルをアップロード / 再ログイン: Firestoreで完全上書き
-                        firestoreSyncRepository.syncOnLogin(user.uid, repository)
+                        val syncResult = firestoreSyncRepository.syncOnLogin(user.uid, repository)
+                        syncResult.onFailure { e ->
+                            val msg = when {
+                                e.message?.contains("PERMISSION_DENIED") == true ->
+                                    "Firestore 同期失敗: セキュリティルールが未設定です。Firebase Console > Firestore > ルール を確認してください"
+                                e.message?.contains("UNAVAILABLE") == true ||
+                                e.message?.contains("NETWORK") == true ->
+                                    "Firestore 同期失敗: ネットワークエラー（接続回復後に自動再試行します）"
+                                else -> "Firestore 同期失敗: ${e.message}"
+                            }
+                            _uiState.update { it.copy(authError = msg) }
+                        }
                     }
                     .onFailure { e ->
                         _uiState.update { it.copy(authError = e.message) }
