@@ -10,6 +10,7 @@ import android.content.Intent
 import android.location.Location
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -37,6 +38,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val TAG = "LocationTrackingService"
 
 @AndroidEntryPoint
 class LocationTrackingService : Service() {
@@ -270,12 +273,26 @@ class LocationTrackingService : Service() {
     }
 
     private suspend fun trySyncSession(sessionId: Long) {
-        val user = authRepository.currentUser ?: return
-        if (!networkMonitor.isConnectedNow()) return
+        val user = authRepository.currentUser
+        if (user == null) {
+            Log.d(TAG, "trySyncSession: not authenticated, will sync on next login")
+            return
+        }
+        if (!networkMonitor.isConnectedNow()) {
+            Log.d(TAG, "trySyncSession: no network, scheduling SyncWorker for later")
+            scheduleSyncWorker()
+            return
+        }
 
         val session = repository.getById(sessionId) ?: return
         val points = repository.getPointsBySessionOnce(sessionId)
         val result = firestoreSyncRepository.uploadSession(session, points)
+
+        if (result.isSuccess) {
+            Log.d(TAG, "trySyncSession: session $sessionId uploaded (uuid=${session.sessionUuid})")
+        } else {
+            Log.w(TAG, "trySyncSession: session $sessionId upload failed", result.exceptionOrNull())
+        }
 
         repository.updateSyncStatus(
             id = sessionId,

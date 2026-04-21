@@ -1,5 +1,6 @@
 package com.healthcare.app.data.repository
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -10,6 +11,7 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val TAG = "FirestoreSyncRepository"
 private const val MAX_GEO_POINTS = 20_000
 
 @Singleton
@@ -37,8 +39,9 @@ class FirestoreSyncRepository @Inject constructor(
                 points
             }
 
+            // [lat, lng] の配列形式でキー文字列を省略しサイズを削減
             val geoPoints = sampledPoints.map { point ->
-                mapOf("lat" to point.latitude, "lng" to point.longitude)
+                listOf(point.latitude, point.longitude)
             }
 
             val doc = mapOf(
@@ -57,60 +60,89 @@ class FirestoreSyncRepository @Inject constructor(
                 .set(doc)
                 .await()
 
+            Log.d(TAG, "uploadSession: success uuid=${session.sessionUuid}")
             Result.success(session.sessionUuid)
         } catch (e: Exception) {
+            Log.w(TAG, "uploadSession: failed uuid=${session.sessionUuid}", e)
             Result.failure(e)
         }
     }
 
     /**
-     * サインイン時の同期処理。
-     * - Firestore にデータがない（初回ログイン）: ローカルデータを全件アップロード
-     * - Firestore にデータがある（再ログイン）: Firestore のデータでローカルを完全上書き
+     * サインイン時の同期処理（双方向マージ）。
+     * ローカルデータは削除しない。
+     * 1. ローカルの PENDING/FAILED セッションを Firestore へアップロード
+     * 2. Firestore にあってローカルにないセッションをローカルへ追加
      */
     suspend fun syncOnLogin(
         uid: String,
         walkingRepository: WalkingRepository
     ): Result<Unit> {
         return try {
+            // Step 1: ローカルの未同期セッションを先にアップロード
+            val localPending = walkingRepository.getPendingSessions()
+            Log.d(TAG, "syncOnLogin: uploading ${localPending.size} pending session(s) for uid=$uid")
+            for (session in localPending) {
+                val points = walkingRepository.getPointsBySessionOnce(session.id)
+                val result = uploadSession(session, points)
+                if (result.isFailure) {
+                    Log.w(TAG, "syncOnLogin: upload failed for session ${session.id}", result.exceptionOrNull())
+                }
+                walkingRepository.updateSyncStatus(
+                    id = session.id,
+                    status = if (result.isSuccess) SyncStatus.SYNCED else SyncStatus.FAILED,
+                    firestoreDocId = session.sessionUuid.takeIf { result.isSuccess }
+                )
+            }
+
+            // Step 2: Firestore にあってローカルにないセッションをダウンロードしてマージ
             val snapshot = firestore
                 .collection("users/$uid/walking_sessions")
                 .get()
                 .await()
 
-            if (snapshot.isEmpty) {
-                // 初回ログイン: ローカルデータを全件アップロード
-                val localSessions = walkingRepository.getAllCompletedSessions()
-                for (session in localSessions) {
-                    val points = walkingRepository.getPointsBySessionOnce(session.id)
-                    val result = uploadSession(session, points)
-                    walkingRepository.updateSyncStatus(
-                        id = session.id,
-                        status = if (result.isSuccess) SyncStatus.SYNCED else SyncStatus.FAILED,
-                        firestoreDocId = session.sessionUuid.takeIf { result.isSuccess }
-                    )
-                }
-            } else {
-                // 再ログイン: Firestore のデータでローカルを完全上書き
-                walkingRepository.deleteAllLocalData()
-                for (doc in snapshot.documents) {
-                    val sessionUuid = doc.getString("sessionId") ?: continue
-                    val startTime = doc.getLong("startTime") ?: continue
-                    val endTime = doc.getLong("endTime")
-                    val distanceMeters = doc.getDouble("distanceMeters") ?: 0.0
-                    val calories = doc.getDouble("caloriesBurned") ?: 0.0
+            for (doc in snapshot.documents) {
+                val sessionUuid = doc.getString("sessionId") ?: continue
+                // ローカルに既に存在する場合はスキップ（ローカルを正とする）
+                if (walkingRepository.getByUuid(sessionUuid) != null) continue
 
-                    val session = WalkingSession(
-                        sessionUuid = sessionUuid,
-                        startTime = startTime,
-                        endTime = endTime,
-                        totalDistanceMeters = distanceMeters,
-                        totalCalories = calories,
-                        isActive = false,
-                        syncStatus = SyncStatus.SYNCED,
-                        firestoreDocId = doc.id
-                    )
-                    walkingRepository.upsertSessionFromRemote(session)
+                val startTime = doc.getLong("startTime") ?: continue
+                val endTime = doc.getLong("endTime")
+                val distanceMeters = doc.getDouble("distanceMeters") ?: 0.0
+                val calories = doc.getDouble("caloriesBurned") ?: 0.0
+
+                val session = WalkingSession(
+                    sessionUuid = sessionUuid,
+                    startTime = startTime,
+                    endTime = endTime,
+                    totalDistanceMeters = distanceMeters,
+                    totalCalories = calories,
+                    isActive = false,
+                    syncStatus = SyncStatus.SYNCED,
+                    firestoreDocId = doc.id
+                )
+                walkingRepository.upsertSessionFromRemote(session)
+
+                // geoPoints を walking_points テーブルに復元
+                val roomSession = walkingRepository.getByUuid(sessionUuid) ?: continue
+                @Suppress("UNCHECKED_CAST")
+                val rawPoints = doc.get("geoPoints") as? List<*> ?: emptyList<Any>()
+                val walkingPoints = rawPoints.mapIndexedNotNull { index, item ->
+                    @Suppress("UNCHECKED_CAST")
+                    val coords = item as? List<*>
+                    val lat = (coords?.getOrNull(0) as? Number)?.toDouble()
+                    val lng = (coords?.getOrNull(1) as? Number)?.toDouble()
+                    if (lat != null && lng != null) {
+                        WalkingPoint(
+                            sessionId = roomSession.id,
+                            latitude = lat,
+                            longitude = lng,
+                            timestamp = startTime + index
+                        )
+                    } else null
+                }
+                if (walkingPoints.isNotEmpty()) {
+                    walkingRepository.addPoints(walkingPoints)
                 }
             }
 
