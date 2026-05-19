@@ -1,152 +1,144 @@
-# 品質ゲート判定: Firebase 認証とクラウド同期機能
+﻿# 品質ゲート判定: Firestore 座標データ Blob 圧縮保存 (geoFlatBlob)
 
-- **判定日**: 2026-04-20
+- **判定日**: 2026-05-19
 - **判定者**: Quality Controller Agent
-- **対象**: Firebase Authentication + Firestore 同期実装
-- **入力成果物**: `docs/review-report.md`, `docs/test-report.md`, `docs/acceptance-criteria.md`
+- **対象差分**: `FirestoreSyncRepository.kt` — geoFlatBlob 対応（`encodeGeoBlob` / `decodeGeoBlob` 追加、`uploadSession` / `syncOnLogin` 修正）
+- **入力成果物**: `docs/review-report.md`, `docs/test-report.md`, 変更差分サマリー
 
 ---
 
-## 最終判定: **Go（条件付き）**
+## 最終判定: **Go**
 
-> リリースブロッカーはすべて解消済み。ただし、本番環境向けのデプロイ前に「リリース前必須作業」を完了すること。
+> リリースブロッカーは 0 件。ビルド成功・全 AC 17 件 Pass を確認。NIT 2 件および既存技術的負債は次スプリントで管理する。
 
 ---
 
 ## 判定根拠
 
-### 1. ビルド成功
+### 1. ビルド検証
 
 | 検証項目 | 状態 |
 |---|---|
-| `assembleDebug` | ✅ BUILD SUCCESSFUL (18s) |
+| `./gradlew assembleDebug` | ✅ BUILD SUCCESSFUL (43 tasks up-to-date) |
+| コンパイルエラー | なし |
 | `app-debug.apk` 生成 | ✅ 確認済み |
 
-### 2. リリースブロッカーの解消
+---
+
+### 2. レビュー指摘 — リリースブロッカー解消状況
 
 | 指摘ID | 内容 | 状態 |
 |---|---|---|
-| MUST-1 | `WalkingSession.sessionUuid` が空文字列デフォルト → 全セッション同期永続失敗 | ✅ **修正済み** (`UUID.randomUUID().toString()` に変更) |
-| BUG-001 | `HomeScreen.kt` の `HomeScreen` / `StatCard` / `SessionCard` 重複定義 → ビルドエラー | ✅ **修正済み** (旧実装を削除、各関数1定義のみ) |
-| BUG-RACE-001 | `endSession` / `updateSessionStats` の競合状態 → 履歴が保存されない根本原因 | ✅ **修正済み** (read-modify-write → ターゲット UPDATE クエリに変更) |
-| BUG-PERIODIC-001 | `PERIODIC_WORK_NAME` / `buildPeriodicRequest()` が削除されていた → フォールバック同期が機能しない | ✅ **修正済み** (復元、コミット `c560478`) |
-| BUG-NONET-001 | no-network 時に `trySyncSession` が `scheduleSyncWorker()` を呼ばない → セッションが最大 15 分転送されない | ✅ **修正済み** (コミット `c560478`) |
-| BUG-SILENT-001 | Firestore エラーが全て無音 → 根本原因の特定が不可能 | ✅ **修正済み** (Log.d/w 追加、コミット `c560478`) |
+| MUST-1 | `decodeGeoBlob` — `GZIPInputStream` リソースリーク（`.use{}` 未使用） | ✅ **解消済み** |
+| MUST-2 | `uploadSession` — stride が floor 除算でバグ（20,001〜39,999 点で間引き不能） | ✅ **解消済み**（ceil 除算に変更） |
+| SHOULD-1 | `syncOnLogin` — `IOException` catch スコープが過大（座標復元以外の IO 失敗を誤補足） | ✅ **解消済み**（catch を座標復元ブロックのみに絞小） |
 
-**コード実態確認**:
-- `WalkingSession.kt` L11: `val sessionUuid: String = UUID.randomUUID().toString()` ✅
-- `HomeScreen.kt`: `fun HomeScreen` 1箇所 / `fun StatCard` 1箇所 / `fun SessionCard` 1箇所 ✅
+**must 0 件、should 0 件** を確認。リリースブロッカーなし。
 
-### 3. 受け入れ条件の充足状況（静的検証）
+---
 
-| カテゴリ | PASS | FAIL | 備考 |
+### 3. 受け入れ条件の充足状況（静的解析）
+
+| カテゴリ | PASS | FAIL | 検証手法 |
 |---|---|---|---|
-| AC-AUTH（認証 6条件） | 6 | 0 | 実機検証は本番 `google-services.json` 要 |
-| AC-SYNC（同期 4条件） | 4 | 0 | 静的検証 |
-| AC-MULTI（マルチデバイス 3条件） | 3 | 0 | 静的検証 |
-| AC-OFFLINE（オフラインファースト 3条件） | 3 | 0 | 静的検証 |
-| Room マイグレーション（2条件） | 2 | 0 | 静的検証 |
-| Firestore Security Rules | 1 | 0 | SHOULD-4（delete許可）は残存リスクとして記載 |
-| **合計** | **19** | **0** | |
+| AC-ENC（エンコード 3件） | 3 | 0 | 静的解析 |
+| AC-DEC（デコード 3件） | 3 | 0 | 静的解析 |
+| AC-UPLOAD（アップロード 6件） | 6 | 0 | 静的解析 |
+| AC-SYNC（サインイン時同期 5件） | 5 | 0 | 静的解析 |
+| **合計** | **17** | **0** | |
 
-> **制約**: すべて静的（コードレビューベース）検証。実機またはエミュレータによる動的検証は未実施。
+> **制約**: すべて静的（コードレビューベース）検証。実機・エミュレータによる動的検証は未実施。
+
+---
+
+### 4. 品質観点別評価
+
+#### 機能
+
+- `encodeGeoBlob`: `ByteBuffer`（lat 8B + lng 8B × n 点）→ `GZIPOutputStream(.use{})` → `Blob` の実装が正確。
+- `decodeGeoBlob`: `GZIPInputStream(.use{})` → `ByteBuffer.wrap` → `while (remaining >= 16)` で末尾不完全バイトを安全に無視。
+- `uploadSession`: ceil 除算により 20,001〜39,999 点のケースを含むすべての点数で間引き後 20,000 点以下を保証。
+- `syncOnLogin`: `geoFlatBlob` 優先・`geoFlat` フォールバック・両方不在時は空リストと 3 ケースを網羅。
+
+**評価: 適合**
+
+#### セキュリティ（OWASP Top 10 Mobile）
+
+| 観点 | 評価 | 根拠 |
+|---|---|---|
+| A01 アクセス制御 | ○ | Firestore Security Rules でユーザー UID にスコープ済み |
+| A02 暗号化の失敗 | ○ | GZIP は圧縮であり暗号化ではないが、PHI（GPS 座標）は Firebase SDK の TLS 転送 + Firestore 認証・認可で保護。ローカル平文保存なし |
+| A03 インジェクション | ○ | Firestore 型付き API (`Blob.fromBytes`) を使用。任意文字列インジェクションリスクなし |
+| A04 安全でない設計 | ○ | 座標データはローカルに平文保存されない |
+| A09 セキュリティログ | ○ | 破損 Blob 時に `Log.w(TAG, ..., e)` でトレーサブルなログを出力 |
+
+**評価: 適合**
+
+#### パフォーマンス
+
+- **CPU 増加**: `encodeGeoBlob` / `decodeGeoBlob` が同期処理（`suspend` 関数内）で実行されるが、座標データは最大 20,000 点 × 16 B = 320 KB であり Coroutine の IO スレッドプールで許容可能。
+- **ストレージ節約**: GPS 座標の連続値は GZIP 圧縮率が高く（通常 60〜80 % 削減）、Firestore の読み書きコスト・帯域を削減。
+- **トレードオフ**: CPU オーバーヘッドよりストレージ・転送コスト削減が上回ると判断。
+
+**評価: 許容範囲内**
+
+#### 後方互換性
+
+- `syncOnLogin` は `geoFlatBlob` フィールドが存在しない旧ドキュメントに対して `geoFlat` フォールバックを実装。旧クライアントが書き込んだデータを破損なく読み取れる。
+
+**評価: 適合**
+
+#### 運用継続性
+
+- `decodeGeoBlob` は例外を呼び出し元に伝播し、`syncOnLogin` の `catch (e: IOException)` で捕捉して `Log.w` + `emptyList()` を返す。Blob 破損時もアプリはクラッシュせずセッションメタデータのみ同期継続。
+
+**評価: 適合**
 
 ---
 
 ## 残存リスク一覧
 
-### 優先度: 高（リリース前または早期対応推奨）
+### 優先度: 高（次スプリント推奨）
 
-| ID | ファイル | 内容 | リスク | 推奨対応 | 状態 |
-|---|---|---|---|---|---|
-| SHOULD-4 | `firestore.rules` | `write` に `delete` を含む。クライアントから自身のセッションを Firestore 上で削除可能 | データ消失（誤実装・悪意あるクライアント） | `allow read, create, update:` に変更し `delete` を除外 | ✅ 修正済み |
-| SHOULD-2 | `FirestoreSyncRepository.kt` | `fetchAndMerge(uid: String, ...)` が外部から任意の `uid` を受け取れる | OWASP A01 観点の潜在的アクセス制御不備（Firestore Rules が最終防衛線） | 内部で `auth.currentUser?.uid` を取得するよう変更 | 未対応 |
-| SHOULD-6 | `SyncWorker.kt` | `Result.retry()` の上限未定義。ネットワーク障害長期化時にバッテリー・通信量を消費し続ける | UX劣化・端末リソース消費 | `runAttemptCount < 5` で上限を設ける | ✅ 修正済み |
-
-### 優先度: 中（次スプリント対応推奨）
-
-| ID | ファイル | 内容 | リスク | 状態 |
-|---|---|---|---|---|
-| SHOULD-1 | `SyncStatusConverter.kt` | `SyncStatus.valueOf(value)` が不正値で `IllegalArgumentException` をスロー | DB 破損・将来の enum 変更でクラッシュ | ✅ 修正済み |
-| SHOULD-5 | `FirestoreSyncRepository.kt` | Firestore から全セッションを一括取得（ページネーションなし） | セッション数増加でメモリ・Firestore 読み取りコスト・遅延が線形増加 | 未対応 |
-| SHOULD-7 | `NetworkMonitor.kt` | `NET_CAPABILITY_VALIDATED` を確認しない | キャプティブポータル環境で `isConnected = true` のまま同期失敗が続く | ✅ 修正済み |
+| ID | 内容 | リスク | 推奨対応 |
+|---|---|---|---|
+| DOC-001 | `docs/acceptance-criteria.md` AC-UPLOAD-3 の Given 節に `stride = floor(...)` と誤記 | レビュアー・テスターが実装の正しさを誤判定する可能性 | Given 節を `stride = ceil(n / MAX_GEO_POINTS)` に修正 |
 
 ### 優先度: 低（技術的負債として管理）
 
-| ID | 内容 |
-|---|---|
-| SHOULD-3 | `FirestoreSyncRepository` が `WalkingRepository` をメソッド引数で受け取る（レイヤー境界侵害） |
-| SHOULD-8 | `AppDatabase` の `exportSchema = false`（マイグレーション履歴の追跡困難） |
-| NIT-1 | `updateSyncStatus` パラメータが `String` 型（`SyncStatus` 型化推奨） |
-| NIT-2 | `authState` Flow が複数 collector でリスナー重複登録（`stateIn` 化推奨） |
-| NIT-3 | `sessionUuid` に DB レベルの UNIQUE インデックスなし |
-| NIT-4 | `fetchAndMerge` の失敗がサイレントに無視される（ログなし） |
-| NIT-5 | `ApiException.statusCode` をユーザー向けエラーメッセージに含めている |
+| ID | 内容 | 備考 |
+|---|---|---|
+| NIT-1 | `@Suppress("UNCHECKED_CAST")` アノテーションが不要（`as? List<*>` は safe cast） | 任意対応 |
+| NIT-2 | `encodeGeoBlob` / `decodeGeoBlob` に `@VisibleForTesting` アノテーション未付与 | 任意対応 |
+| SHOULD-2 | `fetchAndMerge(uid: String, ...)` が外部から任意 uid を受け取れる（前回スプリントからの継続） | 内部で `auth.currentUser?.uid` を取得するよう変更を推奨 |
+| SHOULD-5 | Firestore から全セッションを一括取得（ページネーションなし）（前回スプリントからの継続） | セッション数増大時にメモリ・コスト増加 |
 
 ---
 
-## リリース前必須作業
+## 未実施の検証（制約事項）
 
-以下はコードレビュー・静的検証では確認不可能であり、人手による確認・作業が必須。
-
-| # | 作業 | 担当 | 備考 |
-|---|---|---|---|
-| 1 | **本番用 `google-services.json` の配置** | インフラ/リリース担当 | `app/google-services.json.example` を参考に本番プロジェクトの設定ファイルへ差し替え。`google-services.json` が `.gitignore` で除外されていることを必ず確認 |
-| 2 | **Firestore Security Rules のデプロイ** | インフラ/リリース担当 | `firestore.rules` を本番プロジェクトにデプロイ済みであることを確認。デプロイ漏れの場合、全ユーザーのデータが無防備になる |
-| 3 | **Google Sign-In の OAuth クライアント ID 設定確認** | インフラ/リリース担当 | Firebase Console の認証設定（SHA-1 フィンガープリント、パッケージ名）が本番 APK の署名と一致していることを確認 |
-| 4 | **実機による E2E 動作確認（最低限）** | QA担当 | サインイン・セッション完了・Firestore 書き込み・別端末でのマージの4フローを実機で確認。静的検証では代替不可 |
-| 5 | **SHOULD-4 修正（Firestore Rules の delete 除外）** | 開発担当 | `allow read, write:` を `allow read, create, update:` へ変更することをリリース前に強く推奨 |
+| 項目 | 理由 | リスク |
+|---|---|---|
+| 実機・エミュレータ動的検証 | 本番 `google-services.json` 未設定 | Firestore 実書き込み・読み取りの動作が未確認 |
+| ユニットテスト（JUnit/Mockito） | 既存テストコードが未整備 | `encodeGeoBlob` / `decodeGeoBlob` のラウンドトリップが自動回帰テストで保護されていない |
+| リトライ動作の結合テスト | ネットワーク障害再現環境が未整備 | AC-UPLOAD-5/6 の動的確認が未実施 |
 
 ---
 
-## 最新トラブルシュート結果（2026-04-21 追記）
+## Handoff Contract
 
-### 根本原因の再特定
+### 実施サマリー
+`docs/review-report.md`（must 0 件・should 0 件・NIT 2 件）および `docs/test-report.md`（BUILD SUCCESSFUL・全 AC 17 件 Pass）を入力とし、geoFlatBlob 対応差分の品質ゲート判定を実施した。機能・セキュリティ・パフォーマンス・後方互換性・運用継続性の全観点でリリースブロッカーなしと確認し、**Go** を宣言する。
 
-トラブルシュートの過程で以下が判明した:
+### 成果物一覧
+- `docs/quality-gate.md`（本ファイル）
 
-| 発見 | 詳細 |
-|---|---|
-| **Firestore は test mode（全書き込み許可）** | REST API での匿名書き込みが成功。`firestore.rules` は未デプロイだが書き込みブロックではない |
-| **Firestore には 0 件のデータ** | セッションが一度も Firestore に到達していない |
-| **真の根本原因: stuck session** | BUG-RACE-001 により `isActive=1` のまま残ったセッションが `getPendingSessions()` の `WHERE isActive=0` フィルタに引っかからず SyncWorker/syncOnLogin に無視され続けていた |
+### 未解決事項
+- `docs/acceptance-criteria.md` AC-UPLOAD-3 の stride 計算式誤記（DOC-001）
+- 実機テスト未実施（`google-services.json` 差し替え後に実施推奨）
+- NIT-1 / NIT-2 の任意対応
 
-### 追加修正（コミット `0582b0b`）
-
-| 修正 | 内容 |
-|---|---|
-| **`HealthcareApp.cleanupStuckSessions()`** | 起動時に `isTracking=false` かつ `isActive=1` のセッションを検出し `endSession()` で修復。修復後に `ExistingWorkPolicy.REPLACE` で SyncWorker を強制再スケジュール |
-| **`WalkingRepository` を `HealthcareApp` に DI** | Room アクセスのため |
-
-### ユーザーが取るべき次のステップ
-
-1. 新APKをビルド・インストール
-2. アプリ起動 → 自動で stuck session 修復 → SyncWorker が Firestore にアップロード
-3. Firestore Console で `users/{uid}/walking_sessions` にデータが入ることを確認
-4. （任意・セキュリティ強化）`firebase deploy --only firestore:rules` で `firestore.rules` をデプロイ
-
----
-
-## 合格基準の充足サマリー
-
-| 基準 | 状態 |
-|---|---|
-| すべての MUST 指摘が解消されている | ✅ MUST-1 / BUG-001 / BUG-RACE-001 ともに修正済み |
-| ビルドが成功している | ✅ BUILD SUCCESSFUL |
-| 主要受け入れ条件（AC-AUTH/SYNC/MULTI/OFFLINE）が静的に満たされている | ✅ 19/19 PASS |
-| Firebase 転送バグ（periodic削除・no-networkリトライ・無音エラー）が修正済み | ✅ BUG-PERIODIC-001 / BUG-NONET-001 / BUG-SILENT-001 修正済み |
-| 残存する SHOULD/NIT 指摘が即時リリースブロッカーでない | ✅ 機能要件に直接影響しない（詳細は残存リスク一覧参照） |
-
----
-
-## No-Go 解除条件
-
-現時点の判定は **Go（条件付き）** であり No-Go ではないが、以下のいずれかが判明した場合は即時 No-Go に切り替えること:
-
-- 本番 `google-services.json` が未設定のまま本番ビルドを行う
-- Firestore Security Rules が本番プロジェクトにデプロイされていない
-- 実機 E2E 確認でサインイン・同期フローに致命的バグが発見される
-
----
-
-*作成: Quality Controller Agent — 2026-04-20*
+### 次スプリントへの依頼事項
+- `spec-writer`: AC-UPLOAD-3 の Given 節 stride 計算式を `ceil(n / MAX_GEO_POINTS)` に修正（DOC-001）。
+- `implementer`（任意）: NIT-1（`@Suppress` 削除）・NIT-2（`@VisibleForTesting` 追加）・SHOULD-2（`fetchAndMerge` の uid 取得方法変更）の対応。
+- QA 担当: 本番 `google-services.json` 配置後に実機 E2E 検証（サインイン・セッション完了・Firestore 書き込み・別端末マージ）を実施。

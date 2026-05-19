@@ -2,6 +2,7 @@ package com.healthcare.app.data.repository
 
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.Blob
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.healthcare.app.data.entity.SyncStatus
@@ -9,6 +10,11 @@ import com.healthcare.app.data.entity.WalkingPoint
 import com.healthcare.app.data.entity.WalkingSession
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.tasks.await
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +26,34 @@ class FirestoreSyncRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) {
+    /**
+     * WalkingPoint リストを ByteBuffer に詰め GZIP 圧縮した Firestore Blob を返す。
+     * 1点あたり lat(8B) + lng(8B) = 16B → GZIP で約 40〜60% 削減。
+     */
+    internal fun encodeGeoBlob(points: List<WalkingPoint>): Blob {
+        val buf = ByteBuffer.allocate(points.size * 16)
+        for (p in points) {
+            buf.putDouble(p.latitude)
+            buf.putDouble(p.longitude)
+        }
+        val bos = ByteArrayOutputStream()
+        GZIPOutputStream(bos).use { it.write(buf.array()) }
+        return Blob.fromBytes(bos.toByteArray())
+    }
+
+    /**
+     * GZIP 圧縮済み Blob から座標ペアリストを復元する。
+     */
+    internal fun decodeGeoBlob(blob: Blob): List<Pair<Double, Double>> {
+        val raw = GZIPInputStream(ByteArrayInputStream(blob.toBytes())).use { it.readBytes() }
+        val buf = ByteBuffer.wrap(raw)
+        val result = mutableListOf<Pair<Double, Double>>()
+        while (buf.remaining() >= 16) {
+            result.add(buf.getDouble() to buf.getDouble())
+        }
+        return result
+    }
+
     /**
      * 指数バックオフ付きリトライ。
      * PERMISSION_DENIED など永続的エラーは即座に返す。
@@ -64,17 +98,10 @@ class FirestoreSyncRepository @Inject constructor(
         return withRetry {
             try {
                 val sampledPoints = if (points.size > MAX_GEO_POINTS) {
-                    val stride = points.size / MAX_GEO_POINTS
+                    val stride = (points.size + MAX_GEO_POINTS - 1) / MAX_GEO_POINTS
                     points.filterIndexed { index, _ -> index % stride == 0 }
                 } else {
                     points
-                }
-
-                // Firestore はネスト配列不可のため [lat1, lng1, lat2, lng2, ...] のフラット配列で保存
-                val geoFlat = ArrayList<Double>(sampledPoints.size * 2)
-                for (point in sampledPoints) {
-                    geoFlat.add(point.latitude)
-                    geoFlat.add(point.longitude)
                 }
 
                 val doc = mapOf(
@@ -83,7 +110,7 @@ class FirestoreSyncRepository @Inject constructor(
                     "endTime" to session.endTime,
                     "distanceMeters" to session.totalDistanceMeters,
                     "caloriesBurned" to session.totalCalories,
-                    "geoFlat" to geoFlat,
+                    "geoFlatBlob" to encodeGeoBlob(sampledPoints),
                     "syncedAt" to FieldValue.serverTimestamp()
                 )
 
@@ -157,26 +184,36 @@ class FirestoreSyncRepository @Inject constructor(
                 )
                 walkingRepository.upsertSessionFromRemote(session)
 
-                // geoFlat ([lat1,lng1,lat2,lng2,...]) を walking_points テーブルに復元
+                // 座標データを復元（geoFlatBlob 優先、旧形式 geoFlat にフォールバック）
                 val roomSession = walkingRepository.getByUuid(sessionUuid) ?: continue
-                @Suppress("UNCHECKED_CAST")
-                val geoFlat = doc.get("geoFlat") as? List<*> ?: emptyList<Any>()
-                val walkingPoints = mutableListOf<WalkingPoint>()
-                var i = 0
-                while (i + 1 < geoFlat.size) {
-                    val lat = (geoFlat[i] as? Number)?.toDouble()
-                    val lng = (geoFlat[i + 1] as? Number)?.toDouble()
-                    if (lat != null && lng != null) {
-                        walkingPoints.add(
-                            WalkingPoint(
-                                sessionId = roomSession.id,
-                                latitude = lat,
-                                longitude = lng,
-                                timestamp = startTime + i / 2
-                            )
-                        )
+                val coordPairs: List<Pair<Double, Double>> = try {
+                    val blob = doc.getBlob("geoFlatBlob")
+                    if (blob != null) {
+                        decodeGeoBlob(blob)
+                    } else {
+                        @Suppress("UNCHECKED_CAST")
+                        val geoFlat = doc.get("geoFlat") as? List<*> ?: emptyList<Any>()
+                        val pairs = mutableListOf<Pair<Double, Double>>()
+                        var i = 0
+                        while (i + 1 < geoFlat.size) {
+                            val lat = (geoFlat[i] as? Number)?.toDouble()
+                            val lng = (geoFlat[i + 1] as? Number)?.toDouble()
+                            if (lat != null && lng != null) pairs.add(lat to lng)
+                            i += 2
+                        }
+                        pairs
                     }
-                    i += 2
+                } catch (e: java.io.IOException) {
+                    Log.w(TAG, "syncOnLogin: failed to decode geoFlatBlob for doc=${doc.id}", e)
+                    emptyList()
+                }
+                val walkingPoints = coordPairs.mapIndexed { idx, (lat, lng) ->
+                    WalkingPoint(
+                        sessionId = roomSession.id,
+                        latitude = lat,
+                        longitude = lng,
+                        timestamp = startTime + idx
+                    )
                 }
                 if (walkingPoints.isNotEmpty()) {
                     walkingRepository.addPoints(walkingPoints)

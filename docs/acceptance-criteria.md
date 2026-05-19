@@ -1,144 +1,100 @@
-# 受け入れ条件: 履歴画面で選択した項目の削除
+﻿# 受け入れ条件: Firestore 座標データの Blob 圧縮保存 (geoFlatBlob)
 
-## AC-1 選択モード開始
-- 前提: 履歴一覧に1件以上データがある。
-- 操作: 一覧ヘッダーの「選択」を押す。
-- 期待結果: 選択モードに遷移し、削除/キャンセル操作が表示される。
+## ENC: エンコード処理
 
-## AC-2 項目選択と件数表示
-- 前提: 選択モード中。
-- 操作: 履歴項目を1件タップする。
-- 期待結果: 該当項目が選択状態となり、選択件数が1件増える。
+### AC-ENC-1 通常座標のエンコード
+- **Given**: 座標点が 3 点ある `WalkingPoint` リスト（lat/lng がそれぞれ有効な Double 値）。
+- **When**: `encodeGeoBlob(points)` を呼び出す。
+- **Then**: 戻り値の `Blob` が null でなく、バイト列が GZIP ヘッダー（`1f 8b`）で始まる。
 
-## AC-3 複数選択
-- 前提: 選択モード中。
-- 操作: 複数項目をタップする。
-- 期待結果: 複数項目が同時に選択状態となり、件数表示が選択数と一致する。
+### AC-ENC-2 空リストのエンコード
+- **Given**: 空の `WalkingPoint` リスト。
+- **When**: `encodeGeoBlob(emptyList())` を呼び出す。
+- **Then**: 例外が発生せず、`Blob` が返る。`decodeGeoBlob` にかけると空リストが返る。
 
-## AC-4 選択解除
-- 前提: 項目が選択済み。
-- 操作: 同じ項目を再度タップする。
-- 期待結果: 選択解除され、件数表示が減る。
-
-## AC-5 削除確認
-- 前提: 1件以上選択済み。
-- 操作: 削除アクションを押す。
-- 期待結果: 確認ダイアログが表示される。
-
-## AC-6 削除確定
-- 前提: 削除確認ダイアログ表示中。
-- 操作: 「削除」を押す。
-- 期待結果: 選択中のセッションが削除され、一覧から消える。選択モードは終了する。
-
-## AC-7 削除キャンセル
-- 前提: 削除確認ダイアログ表示中。
-- 操作: 「キャンセル」を押す。
-- 期待結果: データは削除されず、選択状態は維持される。
-
-## AC-8 選択モードキャンセル
-- 前提: 選択モード中。
-- 操作: 「キャンセル」を押す。
-- 期待結果: 選択モードを終了し、選択状態はクリアされる。
-
-## AC-9 非選択モードでの従来挙動
-- 前提: 選択モードでない。
-- 操作: 履歴項目をタップする。
-- 期待結果: 従来通り履歴詳細表示に遷移する。
+### AC-ENC-3 バイトサイズの正確性
+- **Given**: n 点の座標リスト。
+- **When**: `encodeGeoBlob` を呼び出し、Blob を `decodeGeoBlob` で展開したバイト数を確認する。
+- **Then**: 展開後のバイト数が `n * 16` バイトと一致する。
 
 ---
 
-# 受け入れ条件: Firebase 認証とウォーキング履歴のクラウド同期
+## DEC: デコード処理
 
-## AUTH: Firebase Authentication
+### AC-DEC-1 ラウンドトリップ保証
+- **Given**: 任意の `WalkingPoint` リスト（n 点）。
+- **When**: `encodeGeoBlob(points)` → `decodeGeoBlob(blob)` の順に呼び出す。
+- **Then**: 返された `List<Pair<Double, Double>>` の件数が n と一致し、各点の lat/lng 値が元の `WalkingPoint` の値と完全に一致する。
 
-### AC-AUTH-1 Google サインイン — 正常系
-- **Given**: アプリが起動しており、ユーザーが未サインイン状態である。
-- **When**: サインインボタンをタップし、Google アカウント選択ダイアログで有効なアカウントを選択する。
-- **Then**: サインインが完了し、UI にアカウント名（またはアイコン）が表示される。サインインボタンはサインアウトボタンに切り替わる。
+### AC-DEC-2 末尾の不完全バイトを無視
+- **Given**: GZIP 展開後のバイト列が `16 * n + k`（0 < k < 16）バイトの Blob。
+- **When**: `decodeGeoBlob(blob)` を呼び出す。
+- **Then**: 例外が発生せず、n 点のリストが返る。余剰の k バイトは無視される。
 
-### AC-AUTH-2 Google サインイン — キャンセル
-- **Given**: ユーザーが未サインイン状態で、Google アカウント選択ダイアログが表示されている。
-- **When**: ダイアログをキャンセルする。
-- **Then**: サインインは行われず、アプリは未サインイン状態のまま継続できる。エラーメッセージは表示しない（もしくは軽微なトースト表示のみ）。
-
-### AC-AUTH-3 Google サインイン — ネットワークエラー
-- **Given**: ユーザーが未サインイン状態で、端末がオフラインである。
-- **When**: サインインボタンをタップする。
-- **Then**: サインイン失敗のエラーメッセージが表示され、アプリは未サインイン状態のまま継続できる。クラッシュしない。
-
-### AC-AUTH-4 セッション自動復元
-- **Given**: ユーザーが以前にサインイン済みである。
-- **When**: アプリを再起動する。
-- **Then**: サインインダイアログが表示されず、自動的にサインイン状態が復元され、アカウント情報が UI に表示される。
-
-### AC-AUTH-5 サインアウト
-- **Given**: ユーザーがサインイン済みである。
-- **When**: サインアウトボタンをタップし、確認を承認する。
-- **Then**: サインアウトが完了し、UI のアカウント情報が消え、サインインボタンが表示される。ローカルの Room データは削除されない。
-
-### AC-AUTH-6 未サインイン時の基本機能利用
-- **Given**: ユーザーが未サインイン状態である。
-- **When**: ウォーキング追跡を開始・終了する、または履歴画面を開く。
-- **Then**: ウォーキング追跡・ローカル履歴閲覧が正常に動作する。クラウド同期は行われない。
+### AC-DEC-3 破損 Blob の例外伝播
+- **Given**: GZIP として無効なバイト列を持つ `Blob`。
+- **When**: `decodeGeoBlob(blob)` を呼び出す。
+- **Then**: `java.util.zip.ZipException` または `IOException` が発生し、アプリはクラッシュしない（呼び出し元が例外を捕捉する）。
 
 ---
 
-## SYNC: Firestore クラウド同期
+## UPLOAD: セッションアップロード
 
-### AC-SYNC-1 セッション完了時のクラウド同期
-- **Given**: ユーザーがサインイン済みで、端末がオンライン状態である。
-- **When**: ウォーキングセッションを終了する。
-- **Then**: セッションデータが Room に保存され、かつ `users/{uid}/walking_sessions/{sessionId}` に Firestore へ書き込まれる。Room の該当レコードの `syncStatus` が `SYNCED` になる。
+### AC-UPLOAD-1 geoFlatBlob フィールドの書き込み
+- **Given**: 認証済みユーザーが存在し、`WalkingSession` と `WalkingPoint` リストが用意されている。
+- **When**: `uploadSession(session, points)` を呼び出す。
+- **Then**: Firestore ドキュメント `users/{uid}/walking_sessions/{sessionId}` に `geoFlatBlob`（Blob 型）フィールドが書き込まれる。`geoFlat` フィールドは存在しない。
 
-### AC-SYNC-2 同期失敗時のローカル保存の独立性
-- **Given**: ユーザーがサインイン済みだが、Firestore への書き込みがサーバーエラーで失敗する。
-- **When**: ウォーキングセッションを終了する。
-- **Then**: Room へのローカル保存は成功する。`syncStatus` が `FAILED`（または `PENDING`）になる。UI にはローカル保存済みのセッションが表示される。
+### AC-UPLOAD-2 geoFlat フィールドの不在
+- **Given**: 認証済みユーザーが存在し、セッション同期が完了している。
+- **When**: Firestore コンソールまたはテストコードで該当ドキュメントを参照する。
+- **Then**: ドキュメントに `geoFlat` キーが存在しない。
 
-### AC-SYNC-3 未同期データの再同期
-- **Given**: `syncStatus = PENDING` のセッションが Room に存在する。
-- **When**: ネットワーク接続が復帰する（または次回アプリ起動時）。
-- **Then**: `PENDING` セッションが自動的に Firestore へ送信され、成功後に `syncStatus = SYNCED` に更新される。
+### AC-UPLOAD-3 20,000 点超の間引き
+- **Given**: 座標点が 30,000 点ある `WalkingPoint` リスト（stride = ceil(30000 / 20000) = 2、すなわち 2 点に 1 点を採用）。
+- **When**: `uploadSession(session, points)` を呼び出す。
+- **Then**: Firestore に書き込まれる `geoFlatBlob` のデコード後点数が 20,000 点以下となる。アップロード自体は成功する。
 
-### AC-SYNC-4 データ構造の正確性
-- **Given**: セッション同期が完了している。
-- **When**: Firestore コンソールまたはテストコードで `users/{uid}/walking_sessions/{sessionId}` を参照する。
-- **Then**: ドキュメントに `sessionId`、`startTime`、`endTime`、`distanceMeters`、`caloriesBurned`、`geoPoints`（配列）フィールドが含まれる。
+### AC-UPLOAD-4 未認証時のエラー
+- **Given**: `FirebaseAuth.currentUser` が null（未サインイン）。
+- **When**: `uploadSession(session, points)` を呼び出す。
+- **Then**: `Result.failure(IllegalStateException)` が返り、Firestore への書き込みは行われない。
 
----
+### AC-UPLOAD-5 指数バックオフリトライ
+- **Given**: Firestore への書き込みが一時的なネットワークエラーで失敗する（最初の 2 回）。
+- **When**: `uploadSession(session, points)` を呼び出す。
+- **Then**: 最大 3 回の試行後に成功し、`Result.success` が返る。
 
-## MULTI: 複数端末間の履歴共有
-
-### AC-MULTI-1 別端末からの履歴取得
-- **Given**: 端末 A でセッションを完了し、Firestore に同期済みである。同一 Google アカウントで端末 B にサインインする。
-- **When**: 端末 B でアプリを起動（または同期トリガー操作）する。
-- **Then**: 端末 A で記録したセッションが端末 B の履歴一覧に表示される。
-
-### AC-MULTI-2 重複マージ防止
-- **Given**: 端末 A のセッションが端末 B の Room に既にマージ済みである。
-- **When**: 再度 Firestore から取得・マージ処理を実行する。
-- **Then**: 該当セッションが履歴一覧に重複して表示されない。
-
-### AC-MULTI-3 他ユーザーデータへのアクセス不可
-- **Given**: ユーザー A がサインインしている。
-- **When**: UID の異なるユーザー B の Firestore パスへのアクセスを試みる（テストシナリオ）。
-- **Then**: Firestore Security Rules によりアクセスが拒否され、ユーザー B のデータは取得されない。
+### AC-UPLOAD-6 PERMISSION_DENIED はリトライしない
+- **Given**: Firestore への書き込みが `PERMISSION_DENIED` で失敗する。
+- **When**: `uploadSession(session, points)` を呼び出す。
+- **Then**: リトライは行われず、即座に `Result.failure` が返る。試行回数は 1 回のみ。
 
 ---
 
-## OFFLINE: オフラインファースト
+## SYNC: サインイン時同期 (geoFlatBlob 優先読み込み)
 
-### AC-OFFLINE-1 オフライン時のローカル保存
-- **Given**: ユーザーがサインイン済みだが、端末がオフライン状態である。
-- **When**: ウォーキングセッションを終了する。
-- **Then**: Room にセッションが保存され、`syncStatus = PENDING` が設定される。履歴一覧にセッションが表示される。Firestore への同期は行われない（エラー表示なし）。
+### AC-SYNC-1 geoFlatBlob 優先で座標を復元
+- **Given**: Firestore ドキュメントに `geoFlatBlob`（有効な Blob）と `geoFlat`（Array）の両方が存在する。
+- **When**: `syncOnLogin` がそのドキュメントを処理する。
+- **Then**: `geoFlatBlob` のデコード結果が `WalkingPoint` として Room に保存される。`geoFlat` は使用されない。
 
-### AC-OFFLINE-2 オンライン復帰時の自動同期
-- **Given**: `syncStatus = PENDING` のセッションが Room に存在する（オフライン中に記録）。
-- **When**: 端末のネットワーク接続が復帰する。
-- **Then**: バックグラウンドで自動的に Firestore への同期が開始され、成功後に `syncStatus = SYNCED` になる。ユーザーの操作は不要。
+### AC-SYNC-2 geoFlatBlob 不在時は geoFlat フォールバック
+- **Given**: Firestore ドキュメントに `geoFlatBlob` フィールドが存在せず、`geoFlat`（偶数個の Double）が存在する。
+- **When**: `syncOnLogin` がそのドキュメントを処理する。
+- **Then**: `geoFlat` の値から座標ペアが復元され、`WalkingPoint` として Room に保存される。
 
-### AC-OFFLINE-3 オフライン中の履歴閲覧
-- **Given**: 端末がオフライン状態で、Room にセッションデータが存在する。
-- **When**: 履歴画面を開く。
-- **Then**: ローカルの Room データから履歴が正常に表示される。エラーメッセージやクラッシュは発生しない。
+### AC-SYNC-3 両フィールド不在時は座標なしでマージ
+- **Given**: Firestore ドキュメントに `geoFlatBlob` も `geoFlat` も存在しない。
+- **When**: `syncOnLogin` がそのドキュメントを処理する。
+- **Then**: セッションメタデータ（startTime / endTime / distance / calories）は Room にマージされるが、`WalkingPoint` は追加されない。例外は発生しない。
+
+### AC-SYNC-4 ローカル既存セッションは上書きしない
+- **Given**: `sessionUuid` が Room に既存のセッションが Firestore にも存在する。
+- **When**: `syncOnLogin` を実行する。
+- **Then**: Room の既存セッション・座標データは変更されない。
+
+### AC-SYNC-5 重複マージ防止
+- **Given**: 同一 `sessionUuid` に対して `syncOnLogin` を 2 回実行する。
+- **When**: 2 回目の `syncOnLogin` を実行する。
+- **Then**: Room の当該セッションが重複登録されない。履歴一覧に同一セッションが 2 件表示されない。
