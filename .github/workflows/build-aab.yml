@@ -1,0 +1,79 @@
+name: Build Release AAB
+
+on:
+  workflow_call:
+    inputs:
+      version_code:
+        description: "ビルドに使用する versionCode"
+        required: true
+        type: string
+    secrets:
+      KEYSTORE_BASE64:
+        required: true
+      KEYSTORE_PASSWORD:
+        required: true
+      KEY_ALIAS:
+        required: true
+      KEY_PASSWORD:
+        required: true
+      MAPS_API_KEY:
+        required: true
+      GOOGLE_SERVICES_JSON:
+        required: true
+
+jobs:
+  build:
+    name: Build signed AAB
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+
+      # Keystore を Base64 デコードしてファイルに書き出す
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/app/release.keystore
+
+      # google-services.json を Base64 デコードしてファイルに書き出す
+      - name: Decode google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > ${{ github.workspace }}/app/google-services.json
+
+      # local.properties に署名情報と API キーを書き込む
+      - name: Create local.properties
+        run: |
+          cat > local.properties <<EOF
+          KEYSTORE_PATH=${{ github.workspace }}/app/release.keystore
+          KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS=${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
+          MAPS_API_KEY=${{ secrets.MAPS_API_KEY }}
+          EOF
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release AAB
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: ./gradlew bundleRelease
+
+      # 後続 job で利用できるよう AAB をアーティファクトとして保存
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 1

@@ -7,103 +7,46 @@ on:
   workflow_dispatch:  # 手動実行も可能にしておく
 
 jobs:
-  deploy:
-    name: Build & Upload to Play Store (internal)
+  # 1. Play Console から次の versionCode を取得
+  get-version:
+    name: Get next versionCode
+    uses: ./.github/workflows/get-version-code.yml
+    secrets:
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+
+  # 2. 署名済み AAB をビルドしてアーティファクトに保存
+  build:
+    name: Build Release AAB
+    needs: get-version
+    uses: ./.github/workflows/build-aab.yml
+    with:
+      version_code: ${{ needs.get-version.outputs.version_code }}
+    secrets:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+      GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+
+  # 3. AAB を Google Play の internal トラックにアップロード
+  upload:
+    name: Upload to Google Play (internal)
+    needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Download AAB artifact
+        uses: actions/download-artifact@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          name: release-aab
+          path: aab
 
-      - name: Set up Gradle cache
-        uses: gradle/actions/setup-gradle@v3
-
-      # Keystore を Base64 デコードしてファイルに書き出す
-      - name: Decode Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/app/release.keystore
-
-      # google-services.json を Base64 デコードしてファイルに書き出す
-      - name: Decode google-services.json
-        run: |
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > ${{ github.workspace }}/app/google-services.json
-
-      # local.properties に署名情報と API キーを書き込む
-      - name: Create local.properties
-        run: |
-          cat > local.properties <<EOF
-          KEYSTORE_PATH=${{ github.workspace }}/app/release.keystore
-          KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS=${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
-          MAPS_API_KEY=${{ secrets.MAPS_API_KEY }}
-          EOF
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      # Play Console の全トラックから最大 versionCode を取得して +1 をセット
-      - name: Get next versionCode from Play Console
-        id: next_version_code
-        env:
-          SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: |
-          pip install google-auth --quiet
-          python3 - << 'PYEOF'
-          import json, os, sys, urllib.request
-          import google.oauth2.service_account
-          import google.auth.transport.requests
-
-          creds = google.oauth2.service_account.Credentials.from_service_account_info(
-              json.loads(os.environ['SERVICE_ACCOUNT_JSON']),
-              scopes=['https://www.googleapis.com/auth/androidpublisher']
-          )
-          creds.refresh(google.auth.transport.requests.Request())
-
-          pkg  = 'jp.co.rssh_jp.healthcareap'
-          base = 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications'
-          hdrs = {'Authorization': f'Bearer {creds.token}', 'Content-Type': 'application/json'}
-
-          # 一時 Edit を作成してトラック情報を読み取る（コミットしない）
-          req = urllib.request.Request(f'{base}/{pkg}/edits', data=b'{}', headers=hdrs, method='POST')
-          edit_id = json.loads(urllib.request.urlopen(req).read())['id']
-
-          req = urllib.request.Request(f'{base}/{pkg}/edits/{edit_id}/tracks', headers=hdrs)
-          tracks = json.loads(urllib.request.urlopen(req).read()).get('tracks', [])
-
-          max_vc = max(
-              (int(vc)
-               for t in tracks
-               for r in t.get('releases', [])
-               for vc in r.get('versionCodes', [])),
-              default=0
-          )
-          next_vc = max_vc + 1
-          print(f'max versionCode in Play Console: {max_vc}  →  next: {next_vc}', file=sys.stderr)
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'version_code={next_vc}\n')
-          PYEOF
-
-      - name: Build Release AAB
-        env:
-          VERSION_CODE: ${{ steps.next_version_code.outputs.version_code }}
-        run: ./gradlew bundleRelease
-
-      # Google Play にアップロード
       - name: Upload to Google Play (internal track)
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: jp.co.rssh_jp.healthcareap
-          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          releaseFiles: aab/app-release.aab
           track: internal
           # 必要に応じてリリースノートを追加（省略可）
           # releaseName: ${{ github.ref_name }}
