@@ -13,12 +13,9 @@ fun gitTag(projectDir: java.io.File): String? = try {
 
 val resolvedTag: String? = gitTag(rootProject.projectDir)
 val appVersionName: String = resolvedTag?.removePrefix("v") ?: "1.0.1"
-val appVersionCode: Int = resolvedTag?.removePrefix("v")
-    ?.split(".")
-    ?.mapNotNull { it.toIntOrNull() }
-    ?.takeIf { it.size >= 2 }
-    ?.let { p -> p[0] * 10000 + p[1] * 100 + (p.getOrElse(2) { 0 }) }
-    ?: 5
+// In CI, VERSION_CODE is set by the workflow after querying Play Console.
+// Locally falls back to 1 for debug/development builds.
+val appVersionCode: Int = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
 
 plugins {
     alias(libs.plugins.android.application)
