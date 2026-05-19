@@ -1,5 +1,25 @@
 import java.util.Properties
 
+// Derive versionName and versionCode from the latest git tag (e.g. "v1.2.3").
+// Falls back to hardcoded defaults when no tag is reachable.
+fun gitTag(projectDir: java.io.File): String? = try {
+    val proc = ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
+        .directory(projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val line = proc.inputStream.bufferedReader().readLine()?.trim()
+    if (proc.waitFor() == 0 && !line.isNullOrEmpty()) line else null
+} catch (_: Exception) { null }
+
+val resolvedTag: String? = gitTag(rootProject.projectDir)
+val appVersionName: String = resolvedTag?.removePrefix("v") ?: "1.0.1"
+val appVersionCode: Int = resolvedTag?.removePrefix("v")
+    ?.split(".")
+    ?.mapNotNull { it.toIntOrNull() }
+    ?.takeIf { it.size >= 2 }
+    ?.let { p -> p[0] * 10000 + p[1] * 100 + (p.getOrElse(2) { 0 }) }
+    ?: 5
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -24,8 +44,8 @@ android {
         applicationId = "jp.co.rssh_jp.healthcareap"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.0.1"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         val mapsApiKey = localProps.getProperty("MAPS_API_KEY", "")
