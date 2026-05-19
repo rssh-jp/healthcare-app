@@ -31,6 +31,11 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/app/release.keystore
 
+      # google-services.json を Base64 デコードしてファイルに書き出す
+      - name: Decode google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > ${{ github.workspace }}/app/google-services.json
+
       # local.properties に署名情報と API キーを書き込む
       - name: Create local.properties
         run: |
