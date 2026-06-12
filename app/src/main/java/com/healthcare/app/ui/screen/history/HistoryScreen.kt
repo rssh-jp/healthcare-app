@@ -142,59 +142,6 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
                 }
             }
 
-            if (selectedPoint != null) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "タイムライン",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Slider(
-                            value = state.timelineProgress,
-                            onValueChange = viewModel::onTimelineProgressChanged,
-                            valueRange = 0f..1f,
-                            enabled = points.size > 1
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = DateUtils.formatTime(points.first().timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = DateUtils.formatTime(points.last().timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "時刻: ${DateUtils.formatDateTime(displayTimestamp)}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "時間: ${DateUtils.formatTime(displayTimestamp)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "位置: %.5f, %.5f".format(selectedPoint.latitude, selectedPoint.longitude),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
             if (isMapsApiKeyConfigured) {
                 GoogleMap(
                     modifier = Modifier
@@ -249,6 +196,59 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
                             text = "地図を表示できません。MAPS_API_KEY が未設定、またはプレースホルダーです。",
                             modifier = Modifier.padding(16.dp),
                             color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
+            if (selectedPoint != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "タイムライン",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Slider(
+                            value = state.timelineProgress,
+                            onValueChange = viewModel::onTimelineProgressChanged,
+                            valueRange = 0f..1f,
+                            enabled = points.size > 1
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = DateUtils.formatTime(points.first().timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = DateUtils.formatTime(points.last().timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "時刻: ${DateUtils.formatDateTime(displayTimestamp)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "時間: ${DateUtils.formatTime(displayTimestamp)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "位置: %.5f, %.5f".format(selectedPoint.latitude, selectedPoint.longitude),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
