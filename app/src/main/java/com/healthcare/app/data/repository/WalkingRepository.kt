@@ -109,6 +109,11 @@ class WalkingRepository @Inject constructor(
     suspend fun getAllCompletedSessions(): List<WalkingSession> =
         sessionDao.getAllCompleted()
 
+    suspend fun getLatestCompletedSessionLastPoint(): WalkingPoint? {
+        val sessionId = sessionDao.getLatestCompletedSessionId() ?: return null
+        return pointDao.getLastPoint(sessionId)
+    }
+
     suspend fun deleteAllLocalData() {
         pointDao.deleteAll()
         sessionDao.deleteAllCompleted()

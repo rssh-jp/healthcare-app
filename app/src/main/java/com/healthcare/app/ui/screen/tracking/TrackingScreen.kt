@@ -33,12 +33,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.location.Priority
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
@@ -52,6 +56,10 @@ import com.healthcare.app.util.MapsApiKeyValidator
 @Composable
 fun TrackingScreen(viewModel: TrackingViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val fusedLocationClient = remember(context) {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
     var hasPermission by remember { mutableStateOf(viewModel.hasLocationPermission()) }
     val isMapsApiKeyConfigured = MapsApiKeyValidator.isConfigured()
 
@@ -87,6 +95,46 @@ fun TrackingScreen(viewModel: TrackingViewModel = hiltViewModel()) {
             } else {
                 cameraPositionState.animate(CameraUpdateFactory.newLatLng(target))
             }
+        }
+    }
+
+    // 初期表示は現在地を優先し、取れない場合のみ前回最終地点へフォールバックする
+    LaunchedEffect(
+        hasPermission,
+        points.isEmpty(),
+        cameraInitialized,
+        state.latestCompletedSessionLastPoint
+    ) {
+        if (hasPermission && points.isEmpty() && !cameraInitialized) {
+            val cancellationTokenSource = CancellationTokenSource()
+            fusedLocationClient
+                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationTokenSource.token)
+                .addOnSuccessListener { location ->
+                    val target = when {
+                        location != null -> LatLng(location.latitude, location.longitude)
+                        else -> state.latestCompletedSessionLastPoint?.let {
+                            LatLng(it.latitude, it.longitude)
+                        }
+                    }
+
+                    if (target != null) {
+                        cameraPositionState.move(
+                            CameraUpdateFactory.newLatLngZoom(target, 16f)
+                        )
+                        cameraInitialized = true
+                    }
+                }
+                .addOnFailureListener {
+                    state.latestCompletedSessionLastPoint?.let { fallback ->
+                        cameraPositionState.move(
+                            CameraUpdateFactory.newLatLngZoom(
+                                LatLng(fallback.latitude, fallback.longitude),
+                                16f
+                            )
+                        )
+                        cameraInitialized = true
+                    }
+                }
         }
     }
 

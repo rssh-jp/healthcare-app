@@ -90,6 +90,9 @@ interface WalkingSessionDao {
 
     @Query("SELECT * FROM walking_sessions WHERE isActive = 0")
     suspend fun getAllCompleted(): List<WalkingSession>
+
+    @Query("SELECT id FROM walking_sessions WHERE isActive = 0 ORDER BY COALESCE(endTime, startTime) DESC LIMIT 1")
+    suspend fun getLatestCompletedSessionId(): Long?
 }
 
 data class DailyAggregation(

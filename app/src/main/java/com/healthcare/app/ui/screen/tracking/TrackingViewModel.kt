@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class TrackingUiState(
@@ -30,7 +31,8 @@ data class TrackingUiState(
     val totalCalories: Double = 0.0,
     val currentSpeed: Double = 0.0,
     val elapsedTimeMs: Long = 0,
-    val points: List<WalkingPoint> = emptyList()
+    val points: List<WalkingPoint> = emptyList(),
+    val latestCompletedSessionLastPoint: WalkingPoint? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -39,6 +41,14 @@ class TrackingViewModel @Inject constructor(
     private val application: Application,
     private val repository: WalkingRepository
 ) : AndroidViewModel(application) {
+
+    private val latestCompletedSessionLastPoint = kotlinx.coroutines.flow.MutableStateFlow<WalkingPoint?>(null)
+
+    init {
+        viewModelScope.launch {
+            latestCompletedSessionLastPoint.value = repository.getLatestCompletedSessionLastPoint()
+        }
+    }
 
     private val trackingPoints = LocationTrackingService.currentSessionIdFlow
         .flatMapLatest { sessionId ->
@@ -55,7 +65,8 @@ class TrackingViewModel @Inject constructor(
         LocationTrackingService.totalCaloriesFlow,
         LocationTrackingService.currentSpeedFlow,
         LocationTrackingService.elapsedTimeMsFlow,
-        trackingPoints
+        trackingPoints,
+        latestCompletedSessionLastPoint
     ) { values ->
         TrackingUiState(
             isTracking = values[0] as Boolean,
@@ -63,7 +74,8 @@ class TrackingViewModel @Inject constructor(
             totalCalories = values[2] as Double,
             currentSpeed = values[3] as Double,
             elapsedTimeMs = values[4] as Long,
-            points = @Suppress("UNCHECKED_CAST") (values[5] as List<WalkingPoint>)
+            points = @Suppress("UNCHECKED_CAST") (values[5] as List<WalkingPoint>),
+            latestCompletedSessionLastPoint = values[6] as WalkingPoint?
         )
     }.stateIn(
         viewModelScope,
@@ -89,6 +101,10 @@ class TrackingViewModel @Inject constructor(
             ExistingWorkPolicy.REPLACE,
             SyncWorker.buildOneTimeRequest()
         )
+
+        viewModelScope.launch {
+            latestCompletedSessionLastPoint.value = repository.getLatestCompletedSessionLastPoint()
+        }
     }
 
     fun hasLocationPermission(): Boolean {
