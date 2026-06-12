@@ -1,4 +1,102 @@
-﻿# テストレポート: Firestore 座標データ Blob 圧縮保存 (geoFlatBlob)
+﻿# テストレポート追補: 履歴表示画面のタイムライン表示
+
+- **テスト実施日**: 2026-06-12
+- **テスト担当**: delivery-orchestrator
+- **対象ファイル**: `app/src/main/java/com/healthcare/app/ui/screen/history/HistoryScreen.kt`, `app/src/main/java/com/healthcare/app/ui/screen/history/HistoryViewModel.kt`
+- **参照ドキュメント**: `docs/acceptance-criteria.md`
+
+## テスト結果サマリー
+
+| カテゴリ | PASS | FAIL | 検証手法 |
+|---|---|---|---|
+| ビルド検証 | 1 | 0 | `./gradlew :app:compileDebugKotlin` |
+| AC-TL | 3 | 0 | コード確認 + コンパイル |
+| AC-PT | 3 | 0 | コード確認 + 状態遷移確認 |
+| AC-MAP | 3 | 0 | コード確認 + コンパイル |
+
+**総合判定: PASS**
+
+## 1. ビルド検証
+
+### 実行コマンド
+```
+cd c:\Users\tarau\home\prj\github\healthcare-app
+.\gradlew :app:compileDebugKotlin --console=plain --no-daemon
+```
+
+### 結果
+
+- 終了コード: `0`
+- Kotlin コンパイル成功
+- `HistoryScreen.kt` / `HistoryViewModel.kt` にコンパイルエラーなし
+
+## 2. AC-TL 検証
+
+### AC-TL-1 タイムラインカード表示: PASS
+- `selectedPoint != null` のときタイムライン Card を描画する。
+- Card 内に `Slider` を 1 つ配置している。
+
+### AC-TL-2 開始時刻・終了時刻表示: PASS
+- `points.first().timestamp` と `points.last().timestamp` を左右のラベルへ表示している。
+
+### AC-TL-3 単一点セッションの扱い: PASS
+- `enabled = points.size > 1` により、1 点のみでは Slider が無効化される。
+- `selectedPoint` は 1 点目を指すため、時刻・座標表示は継続する。
+
+## 3. AC-PT 検証
+
+### AC-PT-1 最新地点を初期選択: PASS
+- `selectSession()` で `timelineProgress = if (points.size > 1) 1f else 0f` を設定している。
+
+### AC-PT-2 スライダー操作で時刻が更新される: PASS
+- `onTimelineProgressChanged()` が `timelineProgress` を更新する。
+- `selectedPointIndex = round(progress * lastIndex)` により、日時・時刻・座標の表示内容が再計算される。
+
+### AC-PT-3 詳細終了時の状態リセット: PASS
+- `clearSelection()` で `selectedSessionPoints = emptyList()` および `timelineProgress = 1f` に戻している。
+
+## 4. AC-MAP 検証
+
+### AC-MAP-1 選択位置マーカー表示: PASS
+- `selectedPoint != null` の場合、GoogleMap 内に Marker を追加している。
+
+### AC-MAP-2 既存ルート表示の維持: PASS
+- `Polyline` とスタート/ゴール Marker の既存条件分岐を維持している。
+
+### AC-MAP-3 地図未設定時のフォールバック: PASS
+- `MapsApiKeyValidator.isConfigured()` が false の場合、既存のエラーカードを表示する。
+
+## 制約事項
+
+- エミュレータまたは実機での視覚確認は未実施。
+- Google Maps API キー未設定環境のため、地図上の実マーカー描画は動的未確認。
+
+## Handoff Contract
+
+### 実施サマリ
+タイムライン機能差分に対して Kotlin コンパイルを実施し、AC-TL / AC-PT / AC-MAP をコード確認ベースで検証した。
+
+### 成果物
+- `docs/test-report.md`（本追補）
+
+### 未解決事項
+- 実機・エミュレータでの地図描画確認は未実施
+
+### 次フェーズへの依頼事項
+1. 品質ゲートでは「ビルド済み・動的地図未検証」という残存リスクを明示すること。
+2. 必要に応じて API キー設定後の手動 UI 検証を次アクションに含めること。
+
+## 追補検証 (2026-06-12): タイムライン文言変更
+
+- 変更内容: 履歴詳細のタイムライン情報を `経過: ...` から `時間: ...` 表示へ変更
+- コード確認: `HistoryScreen` のタイムライン情報行が `DateUtils.formatTime(selectedPoint.timestamp)` を表示することを確認
+- ビルド確認: `:app:compileDebugKotlin` が `BUILD SUCCESSFUL`
+- 端末反映: `:app:installDebug` によりエミュレータへ再配布完了
+- UI確認: 履歴詳細画面の UI ダンプ再取得を実施し、時刻表示行が継続して表示されることを確認
+
+判定: PASS
+
+# テストレポート: Firestore 座標データ Blob 圧縮保存 (geoFlatBlob)
 
 - **テスト実施日**: 2026-05-19
 - **テスト担当**: Tester Agent

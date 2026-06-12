@@ -1,3 +1,73 @@
+# レビューレポート追補: 履歴表示画面のタイムライン表示
+
+- **レビュー対象**: `app/src/main/java/com/healthcare/app/ui/screen/history/HistoryScreen.kt`, `app/src/main/java/com/healthcare/app/ui/screen/history/HistoryViewModel.kt`
+- **レビュー日時**: 2026-06-12
+- **レビュアー**: delivery-orchestrator
+- **参照ドキュメント**: `docs/specification.md`, `docs/design.md`, `docs/acceptance-criteria.md`
+
+## 総合評価
+
+**合格（must 指摘 0 件）**
+
+タイムライン状態は `HistoryViewModel` に閉じており、UI では導出状態として選択地点を計算している。既存の履歴一覧・削除・ルート表示への影響も局所的で、要件逸脱は確認されなかった。
+
+## 指摘一覧
+
+### MUST
+
+なし
+
+### SHOULD
+
+なし
+
+### NICE-TO-HAVE
+
+#### NIT-TL-1: スライダー値に応じた地図カメラ追従は未実装
+
+今回の仕様範囲外だが、長距離ルートで選択マーカーの視認性をさらに高めるには、スライダー変更時にカメラを選択地点へ寄せる改善余地がある。
+
+## 要件適合チェック
+
+| 受け入れ条件 | 適合 | 備考 |
+|---|---|---|
+| AC-TL-1 | ✓ | 詳細画面にタイムラインカードと Slider を追加 |
+| AC-TL-2 | ✓ | 左右に最初/最後の位置記録時刻を表示 |
+| AC-TL-3 | ✓ | `enabled = points.size > 1` で単一点時に操作不可 |
+| AC-PT-1 | ✓ | セッション選択時に `timelineProgress = 1f` |
+| AC-PT-2 | ✓ | `selectedPoint` から日時・時刻・座標を再描画 |
+| AC-PT-3 | ✓ | `clearSelection()` で状態リセット |
+| AC-MAP-1 | ✓ | `selectedPoint` 用 Marker を追加 |
+| AC-MAP-2 | ✓ | 既存 Polyline / スタート / ゴール表示を維持 |
+| AC-MAP-3 | ✓ | 既存の地図未設定フォールバックを維持 |
+
+## リスクサマリー
+
+| 観点 | 評価 | 備考 |
+|---|---|---|
+| 機能回帰 | 低 | 変更範囲は History 画面と ViewModel に限定 |
+| セキュリティ | 低 | 位置データの新規保存や送信処理は追加していない |
+| 保守性 | 良好 | 進捗状態と導出状態が分離されている |
+
+## 結論
+
+must 指摘 0 件、should 指摘 0 件。今回の差分は仕様追補・設計追補・受け入れ条件追補に整合しているため、テストフェーズへ進行可能。
+
+## Handoff Contract
+
+### 実施サマリ
+タイムライン機能差分をレビューし、要件逸脱・リリースブロッカーがないことを確認した。
+
+### 成果物
+- `docs/review-report.md`（本追補）
+
+### 未解決事項
+- NIT-TL-1: カメラ追従改善余地
+
+### 次フェーズへの依頼事項
+1. コンパイルと画面動作を通じて AC-TL / AC-PT / AC-MAP を確認すること。
+2. 地図未設定時のフォールバック表示が維持されることを明示的に記録すること。
+
 # レビューレポート: Firestore 座標データの Blob 圧縮保存 (geoFlatBlob)
 
 - **レビュー対象**: `app/src/main/java/com/healthcare/app/data/repository/FirestoreSyncRepository.kt`（geoFlatBlob 対応差分 — 修正済み最終版）

@@ -1,4 +1,92 @@
-﻿# 設計: Firestore 座標データの Blob 圧縮保存 (geoFlatBlob)
+﻿# 設計追補: 履歴表示画面のタイムライン表示
+
+## 対象
+
+- UI 層: `HistoryScreen`
+- Presentation 層: `HistoryViewModel`, `HistoryUiState`
+
+## アーキテクチャ方針
+
+既存の Compose + MVVM 構成を維持し、タイムラインに関する状態は `HistoryViewModel` の `HistoryUiState` へ集約する。位置データ取得元の `WalkingRepository` や Entity は変更しない。
+
+## データフロー設計
+
+### セッション選択時
+
+```
+HistoryScreen.onClick(session)
+    -> HistoryViewModel.selectSession(session)
+        -> WalkingRepository.getPointsBySessionOnce(session.id)
+        -> HistoryUiState.selectedSessionPoints を更新
+        -> timelineProgress を 1f (複数点) / 0f (単一点) へ初期化
+```
+
+### スライダー操作時
+
+```
+Slider.onValueChange(progress)
+    -> HistoryViewModel.onTimelineProgressChanged(progress)
+        -> progress を 0f..1f に clamp
+        -> HistoryUiState.timelineProgress を更新
+
+HistoryScreen
+    -> selectedPointIndex = round(timelineProgress * lastIndex)
+    -> selectedPoint = selectedSessionPoints[selectedPointIndex]
+    -> 日時 / 時刻 / 座標 / 地図マーカーに反映
+```
+
+## 設計決定
+
+### D-TL-1: 進捗は割合で保持する
+
+`timelineProgress` は 0.0〜1.0 の `Float` とし、UI コンポーネントである Slider と直接接続できるようにする。インデックスを保持しない理由は、セッションごとの点数差を吸収しやすく、状態表現が単純になるため。
+
+### D-TL-2: 選択地点は UI で算出する
+
+選択地点インデックスは `HistoryScreen` で `round(progress * lastIndex)` により算出する。`HistoryViewModel` には選択結果そのものを保持させず、`selectedSessionPoints` と `timelineProgress` から導出することで状態の重複を避ける。
+
+### D-TL-3: 初期位置は最新地点
+
+履歴確認時は「最後にどこにいたか」を確認したいケースが多いため、初期進捗を終端側に寄せる。点数 1 件以下では 0f とし、操作不可のスライダーにする。
+
+### D-TL-4: 既存地図表示は温存する
+
+選択位置マーカーのみを追加し、カメラ制御やルート描画ロジックは変更しない。これにより既存の地図表示回帰を最小限に抑える。
+
+## 責務分担
+
+| コンポーネント | 責務 |
+|---|---|
+| `HistoryViewModel` | セッション詳細取得、タイムライン進捗の保持、進捗リセット |
+| `HistoryScreen` | スライダー描画、選択地点インデックス導出、テキスト表示、地図マーカー描画 |
+| `WalkingRepository` | 既存どおりセッションと位置記録の取得 |
+
+## 非機能要件との対応
+
+| 要件 | 対応 |
+|---|---|
+| NFR-TL-1 | 状態は `HistoryUiState` に追加し、MVVM を維持 |
+| NFR-TL-2 | Entity/DAO/Repository の永続化仕様は不変更 |
+| NFR-TL-3 | 地図未設定時でもテキストで時刻と座標を確認可能 |
+
+## Handoff Contract
+
+### 実施サマリ
+タイムライン表示を `HistoryScreen` と `HistoryViewModel` の責務に分離し、進捗状態・選択地点導出・地図連動の設計を定義した。
+
+### 成果物
+- `docs/design.md`（本追補）
+- `docs/task-breakdown.md`
+
+### 未解決事項
+- None
+
+### 次フェーズへの依頼事項
+1. `HistoryUiState` に `timelineProgress` を追加すること。
+2. `HistoryScreen` にタイムラインカード、スライダー、選択位置マーカーを実装すること。
+3. 既存ルート表示が維持されることをビルドと画面確認で検証すること。
+
+# 設計: Firestore 座標データの Blob 圧縮保存 (geoFlatBlob)
 
 ## 対象
 

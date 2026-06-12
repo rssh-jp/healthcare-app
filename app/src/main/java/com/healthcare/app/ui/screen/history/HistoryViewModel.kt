@@ -19,6 +19,7 @@ data class HistoryUiState(
     val sessions: List<WalkingSession> = emptyList(),
     val selectedSession: WalkingSession? = null,
     val selectedSessionPoints: List<WalkingPoint> = emptyList(),
+    val timelineProgress: Float = 1f,
     val isSelectionMode: Boolean = false,
     val selectedSessionIds: Set<Long> = emptySet(),
     val showDeleteConfirmDialog: Boolean = false,
@@ -59,7 +60,8 @@ class HistoryViewModel @Inject constructor(
             val points = repository.getPointsBySessionOnce(session.id)
             _uiState.value = _uiState.value.copy(
                 selectedSession = session,
-                selectedSessionPoints = points
+                selectedSessionPoints = points,
+                timelineProgress = if (points.size > 1) 1f else 0f
             )
         }
     }
@@ -67,8 +69,13 @@ class HistoryViewModel @Inject constructor(
     fun clearSelection() {
         _uiState.value = _uiState.value.copy(
             selectedSession = null,
-            selectedSessionPoints = emptyList()
+            selectedSessionPoints = emptyList(),
+            timelineProgress = 1f
         )
+    }
+
+    fun onTimelineProgressChanged(progress: Float) {
+        _uiState.value = _uiState.value.copy(timelineProgress = progress.coerceIn(0f, 1f))
     }
 
     fun enterSelectionMode() {

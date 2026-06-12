@@ -28,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -48,9 +49,11 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.healthcare.app.data.entity.WalkingPoint
 import com.healthcare.app.data.entity.WalkingSession
 import com.healthcare.app.util.DateUtils
 import com.healthcare.app.util.MapsApiKeyValidator
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,6 +110,20 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
 
             // Map showing route
             val points = state.selectedSessionPoints
+            val selectedPointIndex = if (points.isEmpty()) {
+                -1
+            } else {
+                (state.timelineProgress * points.lastIndex)
+                    .roundToInt()
+                    .coerceIn(0, points.lastIndex)
+            }
+            val selectedPoint = if (selectedPointIndex >= 0) points[selectedPointIndex] else null
+            val displayTimestamp = estimateTimelineTimestamp(
+                selectedSession = state.selectedSession,
+                points = points,
+                selectedPointIndex = selectedPointIndex,
+                selectedPoint = selectedPoint
+            )
             val cameraPositionState = rememberCameraPositionState()
 
             if (points.isNotEmpty()) {
@@ -123,6 +140,59 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
                         )
                     }
                 }
+            }
+
+            if (selectedPoint != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "タイムライン",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Slider(
+                            value = state.timelineProgress,
+                            onValueChange = viewModel::onTimelineProgressChanged,
+                            valueRange = 0f..1f,
+                            enabled = points.size > 1
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = DateUtils.formatTime(points.first().timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = DateUtils.formatTime(points.last().timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "時刻: ${DateUtils.formatDateTime(displayTimestamp)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "時間: ${DateUtils.formatTime(displayTimestamp)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "位置: %.5f, %.5f".format(selectedPoint.latitude, selectedPoint.longitude),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             if (isMapsApiKeyConfigured) {
@@ -151,6 +221,14 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
                             state = MarkerState(position = path.last()),
                             title = "ゴール",
                             snippet = DateUtils.formatTime(points.last().timestamp)
+                        )
+                    }
+
+                    if (selectedPoint != null) {
+                        Marker(
+                            state = MarkerState(position = LatLng(selectedPoint.latitude, selectedPoint.longitude)),
+                            title = "選択位置",
+                            snippet = DateUtils.formatDateTime(displayTimestamp)
                         )
                     }
                 }
@@ -285,6 +363,33 @@ fun HistoryScreen(viewModel: HistoryViewModel = hiltViewModel()) {
             )
         }
     }
+}
+
+private fun estimateTimelineTimestamp(
+    selectedSession: WalkingSession?,
+    points: List<WalkingPoint>,
+    selectedPointIndex: Int,
+    selectedPoint: WalkingPoint?
+): Long {
+    if (selectedPoint == null || selectedPointIndex < 0) return selectedSession?.startTime ?: 0L
+
+    if (points.size < 2 || selectedSession == null) {
+        return selectedPoint.timestamp
+    }
+
+    val firstTimestamp = points.first().timestamp
+    val lastTimestamp = points.last().timestamp
+    val pointSpanMs = (lastTimestamp - firstTimestamp).coerceAtLeast(0L)
+    val stepCount = points.lastIndex.coerceAtLeast(1)
+    val avgStepMs = pointSpanMs / stepCount
+
+    val endTime = selectedSession.endTime ?: return selectedPoint.timestamp
+    val sessionSpanMs = (endTime - selectedSession.startTime).coerceAtLeast(0L)
+
+    val seemsSyntheticTimestamp = sessionSpanMs >= 60_000L && avgStepMs < 1_000L
+    if (!seemsSyntheticTimestamp) return selectedPoint.timestamp
+
+    return selectedSession.startTime + ((sessionSpanMs * selectedPointIndex) / stepCount)
 }
 
 @Composable

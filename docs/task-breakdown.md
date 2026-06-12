@@ -1,4 +1,75 @@
-﻿# タスク分解: Firestore 座標データの Blob 圧縮保存 (geoFlatBlob)
+﻿# タスク分解追補: 履歴表示画面のタイムライン表示
+
+## Task 1: `HistoryUiState` にタイムライン状態を追加
+
+**優先度**: P0  
+**ファイル**: `app/src/main/java/com/healthcare/app/ui/screen/history/HistoryViewModel.kt`
+
+**変更内容**:
+- `timelineProgress: Float` を `HistoryUiState` に追加
+- セッション選択時に初期値を設定
+- 詳細終了時に状態をリセット
+
+**完了条件**:
+- セッション選択で `timelineProgress` が初期化される
+- `clearSelection()` でタイムライン状態がリセットされる
+
+## Task 2: `HistoryScreen` にタイムライン UI を追加
+
+**優先度**: P0  
+**ファイル**: `app/src/main/java/com/healthcare/app/ui/screen/history/HistoryScreen.kt`
+
+**変更内容**:
+- タイムラインカード追加
+- Slider 追加
+- 選択日時、選択時刻、座標表示
+
+**完了条件**:
+- 履歴詳細画面でスライダーと時刻情報が表示される
+- 単一点セッションではスライダーが disabled になる
+
+## Task 3: 地図マーカー連動を追加
+
+**優先度**: P1  
+**ファイル**: `app/src/main/java/com/healthcare/app/ui/screen/history/HistoryScreen.kt`
+
+**変更内容**:
+- `timelineProgress` から選択地点を計算
+- 選択位置マーカーを地図へ表示
+- 既存ルート・スタート・ゴール表示を維持
+
+**完了条件**:
+- タイムライン操作で選択位置マーカーが更新される
+- 既存地図表示が崩れない
+
+## Task 4: ビルド・受け入れ条件確認
+
+**優先度**: P1
+
+**手順**:
+1. `./gradlew :app:compileDebugKotlin`
+2. AC-TL / AC-PT / AC-MAP の観点で確認
+
+**完了条件**:
+- コンパイル成功
+- 主要受け入れ条件に対する結果が `docs/test-report.md` に記録される
+
+## Handoff Contract
+
+### 実施サマリ
+タイムライン機能を ViewModel 状態追加、UI 追加、地図連動、検証の 4 タスクに分解した。
+
+### 成果物
+- `docs/task-breakdown.md`（本追補）
+
+### 未解決事項
+- None
+
+### 次フェーズへの依頼事項
+1. まず `HistoryViewModel` の状態追加を実装し、その後 UI と地図連動を追加すること。
+2. 実装後はコンパイル結果と AC ごとの確認結果をレポート化すること。
+
+# タスク分解: Firestore 座標データの Blob 圧縮保存 (geoFlatBlob)
 
 ## 優先順位凡例
 - P0: ブロッカー（後続タスクが依存）
